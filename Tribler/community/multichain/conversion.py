@@ -14,11 +14,11 @@ HASH_LENGTH = 20
 """
 Formatting of the signature packet
 """
-# Sequence_number, previous_hash
-append_format = 'i ' + str(HASH_LENGTH) + 's'
-# Up, Down, TotalUp, TotalDown, sequence_number_requester, previous_hash_requester,
-#   sequence_number_responder, previous_hash_responder]
-signature_format = ' '.join(['!I I I I', append_format, append_format])
+# TotalUp TotalDown Sequence_number, previous_hash
+append_format = 'i i i ' + str(HASH_LENGTH) + 's'
+# Up, Down, TotalUpRequester, TotalDownRequester, sequence_number_requester, previous_hash_requester,
+#   TotalUpResponder, TotalDownResponder, sequence_number_responder, previous_hash_responder]
+signature_format = ' '.join(['!I I', append_format, append_format])
 signature_size = calcsize(signature_format)
 append_size = calcsize(append_format)
 
@@ -43,8 +43,10 @@ class MultiChainConversion(BinaryConversion):
         :return: encoding ready to be sent of the network.
         """
         payload = message.payload
-        return pack(signature_format, *(payload.up, payload.down, payload.total_up, payload.total_down,
+        return pack(signature_format, *(payload.up, payload.down,
+                                        payload.total_up_requester, payload.total_down_requester,
                                         payload.sequence_number_requester, payload.previous_hash_requester,
+                                        payload.total_up_responder, payload.total_down_responder,
                                         payload.sequence_number_responder, payload.previous_hash_responder)),
 
     def _decode_signature(self, placeholder, offset, data):
@@ -61,7 +63,7 @@ class MultiChainConversion(BinaryConversion):
         values = unpack_from(signature_format, data, offset)
         offset += signature_size
 
-        if len(values) != 8:
+        if len(values) != 10:
             raise DropPacket("Unable to decode the signature")
 
         return \

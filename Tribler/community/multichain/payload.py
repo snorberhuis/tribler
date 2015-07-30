@@ -1,6 +1,8 @@
 from Tribler.dispersy.payload import Payload
 from hashlib import sha1
 
+EMPTY_HASH = sha1('').digest()
+
 
 class SignaturePayload(Payload):
     """
@@ -9,22 +11,25 @@ class SignaturePayload(Payload):
     """
 
     class Implementation(Payload.Implementation):
-
-        def __init__(self, meta, up, down, total_up, total_down,
+        def __init__(self, meta, up, down, total_up_requester, total_down_requester,
                      sequence_number_requester, previous_hash_requester,
+                     total_up_responder=-1, total_down_responder=-1,
                      sequence_number_responder=-1, previous_hash_responder=''):
             super(SignaturePayload.Implementation, self).__init__(meta)
+            """ Set the interaction part of the message """
             self._up = up
             self._down = down
-            self._total_up = total_up
-            self._total_down = total_down
-            """ Set the partial signature of the requester in the payload of the message."""
+            """ Set the requester part of the message """
+            self._total_up_requester = total_up_requester
+            self._total_down_requester = total_down_requester
             self._sequence_number_requester = sequence_number_requester
             self._previous_hash_requester = previous_hash_requester
-            """ Set the partial signature of the responder in the payload of the message."""
+            """ Set the responder part of the message. """
+            self._total_up_responder = total_up_responder
+            self._total_down_responder = total_down_responder
             self._sequence_number_responder = sequence_number_responder
             self._previous_hash_responder = previous_hash_responder if previous_hash_responder \
-                else sha1(previous_hash_responder).digest()
+                else EMPTY_HASH
 
         @property
         def up(self):
@@ -35,12 +40,12 @@ class SignaturePayload(Payload):
             return self._down
 
         @property
-        def total_up(self):
-            return self._total_up
+        def total_up_requester(self):
+            return self._total_up_requester
 
         @property
-        def total_down(self):
-            return self._total_down
+        def total_down_requester(self):
+            return self._total_down_requester
 
         @property
         def sequence_number_requester(self):
@@ -49,6 +54,14 @@ class SignaturePayload(Payload):
         @property
         def previous_hash_requester(self):
             return self._previous_hash_requester
+
+        @property
+        def total_up_responder(self):
+            return self._total_up_responder
+
+        @property
+        def total_down_responder(self):
+            return self._total_down_responder
 
         @property
         def sequence_number_responder(self):

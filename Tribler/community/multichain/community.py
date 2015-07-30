@@ -139,11 +139,14 @@ class MultiChainCommunity(Community):
             # TODO: This code always signs a request. Checks and rejects should be inserted here!
             payload = message.payload
 
+            total_up_responder = 1
+            total_down_responder = 1
             sequence_number_responder = self._get_next_sequence_number()
             previous_hash_responder = self._get_latest_hash()
 
-            payload = (payload.up, payload.down, payload.total_up, payload.total_down,
+            payload = (payload.up, payload.down, payload.total_up_requester, payload.total_down_requester,
                        payload.sequence_number_requester, payload.previous_hash_requester,
+                       total_up_responder, total_down_responder,
                        sequence_number_responder, previous_hash_responder)
 
             meta = self.get_meta_message(SIGNATURE)
@@ -196,14 +199,7 @@ class MultiChainCommunity(Community):
         A hash will be created from the message and this will be used as an unique identifier.
         :param message:
         """
-        payload = message.payload
-        (signature_requester, pk_requester) = message.authentication.signed_members[0]
-        (signature_responder, pk_responder) = message.authentication.signed_members[1]
-
-        block = DatabaseBlock([payload.previous_hash_requester, pk_requester.public_key, signature_requester,
-                              payload.previous_hash_responder, pk_responder.public_key, signature_responder,
-                              payload.sequence_number_requester, payload.sequence_number_responder,
-                              payload.up, payload.down, payload.total_up, payload.total_down])
+        block = DatabaseBlock.from_message(message)
         # Create the hash of the message
         block_hash = sha1(message.packet).digest()
         self._logger.info("Persisting sr: %s" % base64.encodestring(block_hash))
