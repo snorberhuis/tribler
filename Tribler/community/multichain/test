@@ -1,0 +1,6 @@
+INSERT INTO multi_chain (block_hash, up, down,        total_up_requester, total_down_requester, sequence_number_requester, previous_hash_requester, total_up_responder, total_down_responder, sequence_number_responder, previous_hash_responder, public_key_requester, signature_requester, public_key_responder, signature_responder)
+VALUES("hash",1,2,3,3,1,"hash_a",4,4,1,"hash_a","pk_a","sig_a","pk_a","sig_a")
+
+SELECT MAX(sequence_number) FROM (SELECT total_up_requester as total_up, total_down_requester as total_down, sequence_number_requester AS sequence_number " \
+FROM multi_chain WHERE public_key_requester == ? UNION
+SELECT total_up_requester as total_up, total_down_requester as total_down, sequence_number_responder FROM multi_chain WHERE public_key_responder = ? )
