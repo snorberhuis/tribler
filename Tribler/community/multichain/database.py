@@ -144,11 +144,31 @@ class MultiChainDB(Database):
         :return: sequence number (integer) or -1 if no block is known
         """
         public_key = buffer(public_key)
-        db_query = u"SELECT MAX(sequence_number) FROM (SELECT sequence_number_requester AS sequence_number " \
+        db_query = u"SELECT MAX(sequence_number) FROM (" \
+                   u"SELECT sequence_number_requester AS sequence_number " \
                    u"FROM multi_chain WHERE public_key_requester == ? UNION " \
-                   u"SELECT sequence_number_responder FROM multi_chain WHERE public_key_responder = ? )"
+                   u"SELECT sequence_number_responder AS sequence_number " \
+                   u"FROM multi_chain WHERE public_key_responder = ? )"
         db_result = self.execute(db_query, (public_key, public_key)).fetchone()[0]
         return db_result if db_result else -1
+
+    def get_total(self, public_key):
+        """
+        Return the latest (total_up, total_down) known in this node.
+        if no block for the pk is know returns (-1,-1)
+        :param public_key: Corresponding public key
+        :return: (total_up (int), total_down (int)) or (-1, -1) if no block is known.
+        """
+        public_key = buffer(public_key)
+        db_query = u"SELECT total_up, total_down, MAX(sequence_number) FROM (" \
+                   u"SELECT total_up_requester as total_up, total_down_requester as total_down, " \
+                   u"sequence_number_requester AS sequence_number FROM multi_chain " \
+                   u"WHERE public_key_requester == ? UNION " \
+                   u"SELECT total_up_responder as total_up, total_down_responder as total_down, " \
+                   u"sequence_number_responder AS sequence_number FROM multi_chain WHERE public_key_responder = ? )" \
+                   u"LIMIT 1"
+        db_result = self.execute(db_query, (public_key, public_key)).fetchone()
+        return (db_result[0], db_result[1]) if db_result[0] and db_result[1] else (-1, -1)
 
     def open(self, initial_statements=True, prepare_visioning=True):
         return super(MultiChainDB, self).open(initial_statements, prepare_visioning)

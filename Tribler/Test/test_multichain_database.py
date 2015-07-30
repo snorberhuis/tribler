@@ -157,5 +157,32 @@ class TestDatabase(MultiChainTestCase):
         # Act & Assert
         self.assertEquals(db.get_previous_id(block1.public_key_responder), block1.id)
 
+    def test_get_total(self):
+        # Arrange
+        db = self.persistence
+        block1 = TestBlock()
+        block2 = TestBlock()
+        block2.public_key_requester = block1.public_key_responder
+        block2.sequence_number_requester = block1.sequence_number_responder + 5
+        block2.total_up_requester = block1.total_up_responder + block2.up
+        block2.total_down_requester = block1.total_down_responder + block2.down
+        db.add_block(block1.id, block1)
+        db.add_block(block2.id, block2)
+        # Act
+        (result_up, result_down) = db.get_total(block2.public_key_requester)
+        # Assert
+        self.assertEqual(block2.total_up_requester, result_up)
+        self.assertEqual(block2.total_down_requester, result_down)
+
+    def test_get_total_not_existing(self):
+        # Arrange
+        db = self.persistence
+        block1 = TestBlock()
+        # Act
+        (result_up, result_down) = db.get_total(block1.public_key_requester)
+        # Assert
+        self.assertEqual(-1, result_up)
+        self.assertEqual(-1, result_down)
+
 if __name__ == '__main__':
     unittest.main()

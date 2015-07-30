@@ -112,13 +112,13 @@ class MultiChainCommunity(Community):
         # Instantiate the data
         up = 1
         down = 2
-        total_up = 3
-        total_down = 4
+        total_up_requester, total_down_requester = self._get_next_total(up, down)
         # Instantiate the personal information
         sequence_number_requester = self._get_next_sequence_number()
         previous_hash_requester = self._get_latest_hash()
 
-        payload = (up, down, total_up, total_down, sequence_number_requester, previous_hash_requester)
+        payload = (up, down, total_up_requester, total_down_requester,
+                   sequence_number_requester, previous_hash_requester)
         meta = self.get_meta_message(SIGNATURE)
 
         message = meta.impl(authentication=([self.my_member, candidate.get_member()],),
@@ -139,8 +139,7 @@ class MultiChainCommunity(Community):
             # TODO: This code always signs a request. Checks and rejects should be inserted here!
             payload = message.payload
 
-            total_up_responder = 1
-            total_down_responder = 1
+            total_up_responder, total_down_responder = self._get_next_total(payload.up, payload.down)
             sequence_number_responder = self._get_next_sequence_number()
             previous_hash_responder = self._get_latest_hash()
 
@@ -207,6 +206,19 @@ class MultiChainCommunity(Community):
 
     def get_key(self):
         return self._ec
+
+    def _get_next_total(self, up, down):
+        """
+        Returns the next total numbers of up and down incremented with the current interaction up and down metric.
+        :param up: Up metric for the interaction.
+        :param down: Down metric for the interaction.
+        :return: (total_up (int), total_down (int)
+        """
+        total_up, total_down = self.persistence.get_total(self._public_key)
+        if total_up == total_down == -1:
+            return up, down
+        else:
+            return total_up+up, total_down + down
 
     def _get_next_sequence_number(self):
         return self.persistence.get_latest_sequence_number(self._public_key) + 1
