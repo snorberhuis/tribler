@@ -22,6 +22,7 @@ from Tribler.community.multichain.database import MultiChainDB, DatabaseBlock
 from Tribler.community.multichain.conversion import MultiChainConversion, split_function
 
 SIGNATURE = u"signature"
+BLOCK_REQUEST = u"block_request"
 
 """ ID of the first block of the chain. """
 GENESIS_ID = sha1("GENESIS_ID").digest()

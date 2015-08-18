@@ -3,10 +3,11 @@ from hashlib import sha1
 from struct import unpack
 
 from Tribler.Test.test_multichain_utilities import TestBlock, MultiChainTestCase
-from Tribler.community.multichain.conversion import MultiChainConversion, split_function, signature_format, append_format
+from Tribler.community.multichain.conversion import MultiChainConversion, split_function, signature_format, \
+    append_format, HASH_LENGTH
 
-from Tribler.community.multichain.community import SIGNATURE
-from Tribler.community.multichain.payload import SignaturePayload, EMPTY_HASH
+from Tribler.community.multichain.community import SIGNATURE, BLOCK_REQUEST
+from Tribler.community.multichain.payload import SignaturePayload, BlockRequestPayload, EMPTY_HASH
 
 from Tribler.dispersy.community import Community
 from Tribler.dispersy.authentication import NoAuthentication
@@ -19,12 +20,15 @@ from Tribler.dispersy.crypto import ECCrypto
 
 
 class TestConversion(MultiChainTestCase):
-
     def __init__(self, *args, **kwargs):
         super(TestConversion, self).__init__(*args, **kwargs)
         self.community = TestCommunity()
 
     def test_encoding_decoding_signature(self):
+        """
+        Test if a responder can send a signature message.
+        This only contains requester and responder data.
+        """
         # Arrange
         converter = MultiChainConversion(self.community)
 
@@ -41,6 +45,10 @@ class TestConversion(MultiChainTestCase):
         self.assertEqual_signature_payload(block, result)
 
     def test_encoding_decoding_signature_requester(self):
+        """
+        Test if a requester can send a signature message.
+        This only contains requester data.
+        """
         # Arrange
         converter = MultiChainConversion(self.community)
 
@@ -59,6 +67,42 @@ class TestConversion(MultiChainTestCase):
         self.assertEqual(-1, result.total_down_responder)
         self.assertEqual(-1, result.sequence_number_responder)
         self.assertEqual(EMPTY_HASH, result.previous_hash_responder)
+
+    def test_encoding_decoding_block_request(self):
+        """
+        Test if a requester can send a block request message.
+        """
+        # Arrange
+        converter = MultiChainConversion(self.community)
+        meta = self.community.get_meta_message(BLOCK_REQUEST)
+
+        requested_sequence_number = 500
+
+        message = meta.impl(distribution=(self.community.claim_global_time(),),
+                            payload=(requested_sequence_number,))
+        # Act
+        encoded_message = converter._encode_block_request(message)[0]
+
+        result = converter._decode_block_request(TestPlaceholder(meta), 0, encoded_message)[1]
+        # Assert
+        self.assertEqual(requested_sequence_number, result.requested_sequence_number)
+
+    def test_encoding_decoding_block_request_empty(self):
+        """
+        Test if a requester can send a block request message without specifying the sequence number.
+        """
+        # Arrange
+        converter = MultiChainConversion(self.community)
+        meta = self.community.get_meta_message(BLOCK_REQUEST)
+
+        message = meta.impl(distribution=(self.community.claim_global_time(),),
+                            payload=())
+        # Act
+        encoded_message = converter._encode_block_request(message)[0]
+
+        result = converter._decode_block_request(TestPlaceholder(meta), 0, encoded_message)[1]
+        # Assert
+        self.assertEqual(-1, result.requested_sequence_number)
 
     def test_split_function(self):
         # Arrange
@@ -86,14 +130,11 @@ class TestConversion(MultiChainTestCase):
 
 
 class TestPlaceholder:
-
     def __init__(self, meta):
         self.meta = meta
 
 
-# noinspection PyMissingConstructor
 class TestCommunity(Community):
-
     crypto = ECCrypto()
 
     def __init__(self):
@@ -112,6 +153,7 @@ class TestCommunity(Community):
 
         self._conversions = self.initiate_conversions()
 
+    @property
     def initiate_meta_messages(self):
         return super(TestCommunity, self).initiate_meta_messages() + [
             Message(self, SIGNATURE,
@@ -120,11 +162,22 @@ class TestCommunity(Community):
                     DirectDistribution(),
                     CandidateDestination(),
                     SignaturePayload(),
-                    self._not_implemented,
-                    self._not_implemented)]
+                    self._community_do_nothing,
+                    self._community_do_nothing),
+            Message(self, BLOCK_REQUEST,
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    BlockRequestPayload(),
+                    self._community_do_nothing,
+                    self._community_do_nothing)]
 
-    @staticmethod
-    def _not_implemented(self):
+
+    def _community_do_nothing(self):
+        """
+        Function that does nothing to implement for a community
+        """
         return
 
     def initiate_conversions(self):

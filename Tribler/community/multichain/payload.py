@@ -70,3 +70,19 @@ class SignaturePayload(Payload):
         @property
         def previous_hash_responder(self):
             return self._previous_hash_responder
+
+
+class BlockRequestPayload(Payload):
+    """
+    Request a block with a specific sequence number or the latest if -1.
+    """
+
+    class Implementation(Payload.Implementation):
+
+        def __init__(self, meta, requested_sequence_number=-1):
+            super(BlockRequestPayload.Implementation, self).__init__(meta)
+            self._requested_sequence_number = requested_sequence_number
+
+        @property
+        def requested_sequence_number(self):
+            return self._requested_sequence_number

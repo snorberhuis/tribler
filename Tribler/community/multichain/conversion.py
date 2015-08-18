@@ -22,6 +22,9 @@ signature_format = ' '.join(['!I I', append_format, append_format])
 signature_size = calcsize(signature_format)
 append_size = calcsize(append_format)
 
+block_request_format = 'i'
+block_request_size = calcsize(block_request_format)
+
 
 class MultiChainConversion(BinaryConversion):
     """
@@ -31,10 +34,13 @@ class MultiChainConversion(BinaryConversion):
     def __init__(self, community):
         super(MultiChainConversion, self).__init__(community, "\x01")
         from Tribler.community.multichain.community import SIGNATURE
+        from Tribler.community.multichain.community import BLOCK_REQUEST
 
         # Define Request Signature.
         self.define_meta_message(chr(1), community.get_meta_message(SIGNATURE),
                                  self._encode_signature, self._decode_signature)
+        self.define_meta_message(chr(2), community.get_meta_message(BLOCK_REQUEST),
+                                 self._encode_block_request, self._decode_block_request)
 
     def _encode_signature(self, message):
         """
@@ -65,6 +71,35 @@ class MultiChainConversion(BinaryConversion):
 
         if len(values) != 10:
             raise DropPacket("Unable to decode the signature")
+
+        return \
+            offset, placeholder.meta.payload.implement(*values)
+
+    def _encode_block_request(self, message):
+        """
+        Encode a block request message.
+        :param message: Message.impl of BlockRequestPayload.impl
+        return encoding ready to be sent of the network of the message
+        """
+        return pack(block_request_format, message.payload.requested_sequence_number),
+
+
+    def _decode_block_request(self, placeholder, offset, data):
+        """
+        Decode an incoming block request message.
+        :param placeholder:
+        :param offset: Start of the BlockRequest message in the data.
+        :param data: ByteStream containing the message.
+        :return: (offset, BlockRequest.impl)
+        """
+        if len(data) < offset + block_request_size:
+            raise DropPacket("Unable to decode the payload")
+
+        values = unpack_from(block_request_format, data, offset)
+        offset += block_request_size
+
+        if len(values) != 1:
+            raise DropPacket("Unable to decode the requested sequence number")
 
         return \
             offset, placeholder.meta.payload.implement(*values)
