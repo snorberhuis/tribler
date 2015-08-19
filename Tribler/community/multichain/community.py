@@ -8,7 +8,7 @@ from hashlib import sha1
 from Queue import Queue
 from threading import Lock
 
-from Tribler.dispersy.authentication import DoubleMemberAuthentication
+from Tribler.dispersy.authentication import DoubleMemberAuthentication, MemberAuthentication
 from Tribler.dispersy.resolution import PublicResolution
 from Tribler.dispersy.distribution import DirectDistribution
 from Tribler.dispersy.destination import CandidateDestination
@@ -17,7 +17,7 @@ from Tribler.dispersy.message import Message
 from Tribler.dispersy.crypto import ECCrypto
 from Tribler.dispersy.conversion import DefaultConversion
 
-from Tribler.community.multichain.payload import SignaturePayload
+from Tribler.community.multichain.payload import SignaturePayload, BlockRequestPayload
 from Tribler.community.multichain.database import MultiChainDB, DatabaseBlock
 from Tribler.community.multichain.conversion import MultiChainConversion, split_function
 
@@ -87,7 +87,15 @@ class MultiChainCommunity(Community):
                     CandidateDestination(),
                     SignaturePayload(),
                     self._generic_timeline_check,
-                    self.received_signature_response)]
+                    self.received_signature_response),
+            Message(self, BLOCK_REQUEST,
+                    MemberAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    BlockRequestPayload(),
+                    self._generic_timeline_check,
+                    self.received_request_block)]
 
     def initiate_conversions(self):
         return [DefaultConversion(self), MultiChainConversion(self)]
@@ -204,6 +212,26 @@ class MultiChainCommunity(Community):
         block_hash = sha1(message.packet).digest()
         self._logger.info("Persisting sr: %s" % base64.encodestring(block_hash))
         self.persistence.add_block(block_hash, block)
+
+    def publish_request_block_message(self, candidate, sequence_number=-1):
+        """
+        Request a specific block from a chain of another candidate.
+        :param candidate: The candidate that the block is requested from
+        :param sequence_number: The requested sequence_number or default the latest sequence number
+        """
+        self._logger.info("Requesting Block:%s" % sequence_number)
+        meta = self.get_meta_message(BLOCK_REQUEST)
+
+        message = meta.impl(authentication=(self.my_member,),
+                            distribution=(self.claim_global_time(),),
+                            destination=(candidate,),
+                            payload=(sequence_number,))
+        self.dispersy.store_update_forward([message], False, False, True)
+
+    def received_request_block(self, messages):
+        for message in messages:
+            self._logger.info("Received request for block: %s" % message.payload.requested_sequence_number)
+
 
     def get_key(self):
         return self._ec
