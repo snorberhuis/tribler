@@ -1,6 +1,7 @@
 """ This file contains everything related to persistence for MultiChain.
 """
 from os import path
+# Hasher used to generate hashes in the MultiChain Community
 from hashlib import sha1
 
 from Tribler.dispersy.database import Database

@@ -26,7 +26,7 @@ BLOCK_REQUEST = u"block_request"
 BLOCK_RESPONSE = u"block_response"
 
 """ ID of the first block of the chain. """
-GENESIS_ID = sha1("GENESIS_ID").digest()
+GENESIS_ID = '0'*20
 
 
 class MultiChainCommunity(Community):
