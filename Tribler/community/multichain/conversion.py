@@ -6,8 +6,6 @@ from struct import pack, unpack_from, calcsize
 from Tribler.dispersy.conversion import BinaryConversion
 from Tribler.dispersy.message import DropPacket
 
-import base64
-
 """
 Hash length used in the MultiChain Community
 """

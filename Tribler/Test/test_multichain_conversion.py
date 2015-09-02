@@ -121,6 +121,7 @@ class TestConversion(MultiChainTestCase):
         encoded_message = converter._encode_block_response(message)[0]
         result = converter._decode_block_response(TestPlaceholder(meta), 0, encoded_message)[1]
         # Assert
+        self.assertEqual(len(block.public_key_requester), len(result.public_key_requester))
         self.assertEqual_block(block, result)
 
     def test_split_function(self):
@@ -157,7 +158,7 @@ class TestCommunity(Community):
     crypto = ECCrypto()
 
     def __init__(self):
-        self.key = self.crypto.generate_key(u"very-low")
+        self.key = self.crypto.generate_key(u"medium")
         self.pk = self.crypto.key_to_bin(self.key.pub())
 
         self.meta_message_cache = {}

@@ -303,11 +303,12 @@ class DatabaseBlock:
                 self.public_key_responder, self.signature_responder)
 
     def __str__(self):
-        return "UP: {0!s}\n Down: {1!s}\n TU: {2!s}\n TD:{3!s}\n SNREQ: {4!s}\nPHREQ: {5!s}\n SNRES: {6!s}\nPHRES: {7!s}\n " \
-               "PKREQ: {8!s}\nSREQ: {9!s}\nPKRES: {10!s}\nSRES: {11!s}".format(
+        return "UP: {0!s}\n Down: {1!s}\n" \
+               "Requester:\n TU: {2!s}\n TD:{3!s}\n SEQ#: {4!s}\nPREVHASH: {5!s}\nPKREQ:{6!s}\SIG:{7!s}\n" \
+               "Responder:\n TU: {8!s}\n TD:{9!s}\n SEQ#: {10!s}\nPREVHASH: {11!s}\nPKREQ:{12!s}\nSIG:{13!s}\n".format(
                    self.up, self.down, self.total_up_requester, self.total_down_requester,
                    self.sequence_number_requester, self.previous_hash_requester,
+                   self.public_key_requester, self.signature_requester,
                    self.total_up_responder, self.total_down_responder,
                    self.sequence_number_responder, self.previous_hash_responder,
-                   self.public_key_requester, self.signature_requester,
                    self.public_key_responder, self.signature_responder)

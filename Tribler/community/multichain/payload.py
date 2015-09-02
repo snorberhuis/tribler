@@ -1,7 +1,6 @@
 from Tribler.dispersy.payload import Payload
-from hashlib import sha1
 
-EMPTY_HASH = sha1('').digest()
+EMPTY_HASH = '0'*19+'1'
 
 
 class SignaturePayload(Payload):

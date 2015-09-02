@@ -50,8 +50,6 @@ class MultiChainCommunity(Community):
         This lock ensures that only one operation is pending.
         """
         self.chain_lock = Lock()
-        # Lock for the timeout of a signature request
-        self.request_timeout_lock = Lock()
         # No response is expected yet.
         self.expected_response = None
 
@@ -195,11 +193,13 @@ class MultiChainCommunity(Community):
             b. False, if not (because of inconsistencies in the payload)
         """
         if not response:
-            self._logger.info("Release lock: Timeout received")
-            # Operation failed release lock.
+            self._logger.info("Release lock: Timeout received.")
+            # Unpack the message from the cache object and store a half-signed record.
+            self.persist_signature_response(request.request.payload.message)
             self.chain_lock.release()
             return False
         else:
+            # TODO: Check expecting response
             self._logger.info("Signature response received. Modified: %s" % modified)
             return request.payload.sequence_number_requester == response.payload.sequence_number_requester and \
                 request.payload.previous_hash_requester == response.payload.previous_hash_requester and \
@@ -211,13 +211,10 @@ class MultiChainCommunity(Community):
         """
         self._logger.info("Valid %s signature response(s) received." % len(messages))
         for message in messages:
-            if self.request_timeout_lock.acquire(False):
-                # TODO: Check expecting response
-                self.persist_signature_response(message)
-                # Release lock because the operation is done.
-                self._logger.info("Release lock: received signature response.")
-                self.chain_lock.release()
-                self.request_timeout_lock.release()
+            self.persist_signature_response(message)
+            # Release lock because the operation is done.
+            self._logger.info("Release lock: received signature response.")
+            self.chain_lock.release()
 
     def persist_signature_response(self, message):
         """
