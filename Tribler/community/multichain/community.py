@@ -41,7 +41,11 @@ class MultiChainCommunity(Community):
         self._ec = self.my_member.private_key
         self._public_key = ECCrypto().key_to_bin(self._ec.pub())
         self.persistence = MultiChainDB(self.dispersy.working_directory)
-        # Lock for operations on the chain
+        """
+        Lock for operations on the chain. Only one operation can be pending on the chain at any time.
+        Without locking the chain will be corrupted and branches will be created.
+        This lock ensures that only one operation is pending.
+        """
         self.chain_lock = Lock()
         # Lock for the timeout of a signature request
         self.request_timeout_lock = Lock()
@@ -111,7 +115,10 @@ class MultiChainCommunity(Community):
         Creates and sends out a signed signature_request message.
         """
         self._logger.info("Sending signature request.")
-        # The lock is lifted after the timeout or a valid signature response is received.
+        """
+        Acquire chain lock to perform operations on the chain.
+        The chain_lock is lifted after the timeout or a valid signature response is received.
+        """
         self._logger.debug("Get Lock: send signature request: %s" % self.chain_lock.locked())
         self.chain_lock.acquire()
         self._logger.debug("Acquired Lock: send signature request.")
@@ -149,6 +156,7 @@ class MultiChainCommunity(Community):
         """
         self._logger.info("Received signature request.")
         self._logger.debug("Chain Lock: process request: %s" % self.chain_lock.locked())
+        # Check if the lock can be acquired without blocking to perform operations on the chain.
         if self.chain_lock.acquire(False):
             self._logger.debug("Chain Lock: acquired to process request.")
             # TODO: This code always signs a request. Checks and rejects should be inserted here!
@@ -169,6 +177,7 @@ class MultiChainCommunity(Community):
                                 distribution=(message.distribution.global_time,),
                                 payload=payload)
             self.persist_signature_response(message)
+            # Operation on chain done, release the chain_lock for other operations.
             self.chain_lock.release()
             self._logger.info("Sending signature response.")
             return message
@@ -184,6 +193,7 @@ class MultiChainCommunity(Community):
         """
         if not response:
             self._logger.info("Release lock: Timeout received")
+            # Operation failed release lock.
             self.chain_lock.release()
             return False
         else:
@@ -201,7 +211,7 @@ class MultiChainCommunity(Community):
             if self.request_timeout_lock.acquire(False):
                 # TODO: Check expecting response
                 self.persist_signature_response(message)
-                # Release lock
+                # Release lock because the operation is done.
                 self._logger.info("Release lock: received signature response.")
                 self.chain_lock.release()
                 self.request_timeout_lock.release()
