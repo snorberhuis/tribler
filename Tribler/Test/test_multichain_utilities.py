@@ -22,6 +22,9 @@ class TestBlock:
         key_requester = crypto.generate_key(u"very-low")
         key_responder = crypto.generate_key(u"very-low")
 
+        print "Siglen:" + str(key_requester.get_signature_length())
+        print "PKlen:" + str(len(crypto.key_to_bin(key_responder.pub())))
+
         # Random payload but unique numbers.
         self.sequence_number_requester = random.randint(50, 100)
         self.sequence_number_responder = random.randint(101, 200)
@@ -44,6 +47,7 @@ class TestBlock:
         self.signature_responder = crypto.create_signature(key_responder, encode_signing_format(
             self.generate_signature_payload()))
 
+
     @property
     def id(self):
         return self.generate_hash()
@@ -60,11 +64,15 @@ class TestBlock:
     def generate_signature_payload(self):
         return self.generate_requester() + self._generate_responder()
 
+    def generate_block_payload(self):
+        return self.generate_requester() + self._generate_responder() + [self.public_key_requester,
+                                                                         self.signature_requester,
+                                                                         self.public_key_responder,
+                                                                         self.signature_responder]
+
     def generate_hash(self):
         # This block uses a different way of generating the hash.
-        data = encode_signing_format(self.generate_signature_payload() +
-                                     [self.public_key_requester, self.signature_requester,
-                                      self.public_key_responder, self.signature_responder])
+        data = encode_signing_format(self.generate_block_payload())
         return sha1(data).digest()
 
 

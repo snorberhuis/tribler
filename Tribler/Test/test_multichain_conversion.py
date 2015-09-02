@@ -4,10 +4,10 @@ from struct import unpack
 
 from Tribler.Test.test_multichain_utilities import TestBlock, MultiChainTestCase
 from Tribler.community.multichain.conversion import MultiChainConversion, split_function, signature_format, \
-    append_format, HASH_LENGTH
+    append_format
 
-from Tribler.community.multichain.community import SIGNATURE, BLOCK_REQUEST
-from Tribler.community.multichain.payload import SignaturePayload, BlockRequestPayload, EMPTY_HASH
+from Tribler.community.multichain.community import SIGNATURE, BLOCK_REQUEST, BLOCK_RESPONSE
+from Tribler.community.multichain.payload import SignaturePayload, BlockRequestPayload, BlockResponsePayload, EMPTY_HASH
 
 from Tribler.dispersy.community import Community
 from Tribler.dispersy.authentication import NoAuthentication
@@ -104,6 +104,25 @@ class TestConversion(MultiChainTestCase):
         # Assert
         self.assertEqual(-1, result.requested_sequence_number)
 
+    def test_encoding_decoding_block_response(self):
+        """
+        Test if a responder can send a block_response message.
+        This only contains requester and responder data.
+        """
+        # Arrange
+        converter = MultiChainConversion(self.community)
+
+        meta = self.community.get_meta_message(BLOCK_RESPONSE)
+        block = TestBlock()
+
+        message = meta.impl(distribution=(self.community.claim_global_time(),),
+                            payload=tuple(block.generate_block_payload()))
+        # Act
+        encoded_message = converter._encode_block_response(message)[0]
+        result = converter._decode_block_response(TestPlaceholder(meta), 0, encoded_message)[1]
+        # Assert
+        self.assertEqual_block(block, result)
+
     def test_split_function(self):
         # Arrange
         converter = MultiChainConversion(self.community)
@@ -153,7 +172,6 @@ class TestCommunity(Community):
 
         self._conversions = self.initiate_conversions()
 
-    @property
     def initiate_meta_messages(self):
         return super(TestCommunity, self).initiate_meta_messages() + [
             Message(self, SIGNATURE,
@@ -171,8 +189,15 @@ class TestCommunity(Community):
                     CandidateDestination(),
                     BlockRequestPayload(),
                     self._community_do_nothing,
+                    self._community_do_nothing),
+            Message(self, BLOCK_RESPONSE,
+                    NoAuthentication(),
+                    PublicResolution(),
+                    DirectDistribution(),
+                    CandidateDestination(),
+                    BlockResponsePayload(),
+                    self._community_do_nothing,
                     self._community_do_nothing)]
-
 
     def _community_do_nothing(self):
         """

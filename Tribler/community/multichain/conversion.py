@@ -6,17 +6,21 @@ from struct import pack, unpack_from, calcsize
 from Tribler.dispersy.conversion import BinaryConversion
 from Tribler.dispersy.message import DropPacket
 
+import base64
+
 """
 Hash length used in the MultiChain Community
 """
 # Calculated with sha1("").digest_size
 HASH_LENGTH = 20
+SIG_LENGTH = 40
+PK_LENGTH = 64
 """
 Formatting of the signature packet
 """
 # TotalUp TotalDown Sequence_number, previous_hash
 append_format = 'i i i ' + str(HASH_LENGTH) + 's'
-# Up, Down, TotalUpRequester, TotalDownRequester, sequence_number_requester, previous_hash_requester,
+# [Up, Down, TotalUpRequester, TotalDownRequester, sequence_number_requester, previous_hash_requester,
 #   TotalUpResponder, TotalDownResponder, sequence_number_responder, previous_hash_responder]
 signature_format = ' '.join(['!I I', append_format, append_format])
 signature_size = calcsize(signature_format)
@@ -24,6 +28,14 @@ append_size = calcsize(append_format)
 
 block_request_format = 'i'
 block_request_size = calcsize(block_request_format)
+
+# [signature, pk]
+authentication_format = str(PK_LENGTH) + 's ' + str(SIG_LENGTH) + 's '
+# [Up, Down, TotalUpRequester, TotalDownRequester, sequence_number_requester, previous_hash_requester,
+#   TotalUpResponder, TotalDownResponder, sequence_number_responder, previous_hash_responder,
+#   signature_requester, pk_requester, signature_responder, pk_responder]
+block_response_format = signature_format + authentication_format + authentication_format
+block_response_size = calcsize(block_response_format)
 
 
 class MultiChainConversion(BinaryConversion):
@@ -33,14 +45,15 @@ class MultiChainConversion(BinaryConversion):
 
     def __init__(self, community):
         super(MultiChainConversion, self).__init__(community, "\x01")
-        from Tribler.community.multichain.community import SIGNATURE
-        from Tribler.community.multichain.community import BLOCK_REQUEST
+        from Tribler.community.multichain.community import SIGNATURE, BLOCK_REQUEST, BLOCK_RESPONSE
 
         # Define Request Signature.
         self.define_meta_message(chr(1), community.get_meta_message(SIGNATURE),
                                  self._encode_signature, self._decode_signature)
         self.define_meta_message(chr(2), community.get_meta_message(BLOCK_REQUEST),
                                  self._encode_block_request, self._decode_block_request)
+        self.define_meta_message(chr(3), community.get_meta_message(BLOCK_RESPONSE),
+                                 self._encode_block_response, self._decode_block_response)
 
     def _encode_signature(self, message):
         """
@@ -83,7 +96,6 @@ class MultiChainConversion(BinaryConversion):
         """
         return pack(block_request_format, message.payload.requested_sequence_number),
 
-
     def _decode_block_request(self, placeholder, offset, data):
         """
         Decode an incoming block request message.
@@ -104,6 +116,35 @@ class MultiChainConversion(BinaryConversion):
         return \
             offset, placeholder.meta.payload.implement(*values)
 
+    def _encode_block_response(self, message):
+        """
+        Encode a block response message.
+        :param message: Message.impl of BlockResponsePayload.impl
+        :return encoding ready to be sent to the network of the message
+        """
+        payload = message.payload
+        return encode_block(payload),
+
+    def _decode_block_response(self, placeholder, offset, data):
+        """
+        Decode an incoming block response message.
+        :param placeholder:
+        :param offset: Start of the BlockResponse message in the data.
+        :param data: ByteStream containing the message.
+        :return: (offset, BlockResponse.impl)
+        """
+        if len(data) < offset + block_response_size:
+            raise DropPacket("Unable to decode the payload")
+
+        values = unpack_from(block_response_format, data, offset)
+        offset += block_response_size
+
+        if len(values) != 14:
+            raise DropPacket("Unable to decode the requested sequence number")
+
+        return \
+            offset, placeholder.meta.payload.implement(*values)
+
 
 def split_function(payload):
     """
@@ -113,3 +154,18 @@ def split_function(payload):
     :return: (first_part, whole)
     """
     return payload[:-append_size], payload
+
+
+def encode_block(payload):
+    """
+    This function encodes a block.
+    :param payload: Payload containing the data as properties
+    :return: encoding
+    """
+    return pack(block_response_format, *(payload.up, payload.down,
+                                         payload.total_up_requester, payload.total_down_requester,
+                                         payload.sequence_number_requester, payload.previous_hash_requester,
+                                         payload.total_up_responder, payload.total_down_responder,
+                                         payload.sequence_number_responder, payload.previous_hash_responder,
+                                         payload.public_key_requester, payload.signature_requester,
+                                         payload.public_key_responder, payload.signature_responder,))

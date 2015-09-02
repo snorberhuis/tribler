@@ -1,6 +1,8 @@
 import unittest
 import os
 
+from Tribler.dispersy.crypto import ECCrypto
+
 from Tribler.Test.test_multichain_utilities import TestBlock, MultiChainTestCase
 from Tribler.community.multichain.database import MultiChainDB
 from Tribler.community.multichain.database import DATABASE_DIRECTORY, DATABASE_PATH
@@ -34,9 +36,9 @@ class TestDatabase(MultiChainTestCase):
         db = self.persistence
         block1 = TestBlock()
         # Act
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         # Assert
-        result = db.get(block1.id)
+        result = db.get_by_block_id(block1.id)
         self.assertEqual_block(block1, result)
 
     def test_add_two_blocks(self):
@@ -45,18 +47,31 @@ class TestDatabase(MultiChainTestCase):
         block1 = TestBlock()
         block2 = TestBlock()
         # Act
-        db.add_block(block1.id, block1)
-        db.add_block(block2.id, block2)
+        db.add_block(block1)
+        db.add_block(block2)
         # Assert
-        result = db.get(block2.id)
+        result = db.get_by_block_id(block2.id)
         super(TestDatabase, self).assertEqual_block(block2, result)
+
+    def test_add_block_valid_pk(self):
+        # Arrange
+        db = self.persistence
+        block1 = TestBlock()
+        # Act
+        db.add_block(block1)
+        pk_req = db.get_by_block_id(block1.id).public_key_requester
+        pk_res = db.get_by_block_id(block1.id).public_key_responder
+        # Assert
+        crypto = ECCrypto()
+        self.assertTrue(crypto.is_valid_public_bin(pk_req), "Invalid public binary for pk requester.")
+        self.assertTrue(crypto.is_valid_public_bin(pk_res), "Invalid public binary for pk responder.")
 
     def test_get_block_non_existing(self):
         # Arrange
         db = self.persistence
         block1 = TestBlock()
         # Act
-        result = db.get(block1.id)
+        result = db.get_by_block_id(block1.id)
         # Assert
         self.assertEqual(None, result)
 
@@ -64,7 +79,7 @@ class TestDatabase(MultiChainTestCase):
         # Arrange
         db = self.persistence
         block1 = TestBlock()
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         # Act & Assert
         self.assertTrue(db.contains(block1.id))
 
@@ -78,7 +93,7 @@ class TestDatabase(MultiChainTestCase):
         # Arrange
         db = self.persistence
         block1 = TestBlock()
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         # Act & Assert
         self.assertTrue(db.contains_signature(block1.signature_requester, block1.public_key_requester))
 
@@ -101,11 +116,11 @@ class TestDatabase(MultiChainTestCase):
         # To test that it will look for both responder and requester.
         db = self.persistence
         block1 = TestBlock()
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         block2 = TestBlock()
         block2.public_key_responder = block1.public_key_requester
         block2.sequence_number_responder = block1.sequence_number_requester-5
-        db.add_block(block2.id, block2)
+        db.add_block(block2)
         # Act & Assert
         self.assertEquals(db.get_latest_sequence_number(block1.public_key_requester), block1.sequence_number_requester)
 
@@ -115,11 +130,11 @@ class TestDatabase(MultiChainTestCase):
         # To test that it will look for both responder and requester.
         db = self.persistence
         block1 = TestBlock()
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         block2 = TestBlock()
         block2.public_key_requester = block1.public_key_responder
         block2.sequence_number_requester = block1.sequence_number_responder-5
-        db.add_block(block2.id, block2)
+        db.add_block(block2)
         # Act & Assert
         self.assertEquals(db.get_latest_sequence_number(block1.public_key_responder), block1.sequence_number_responder)
 
@@ -135,11 +150,11 @@ class TestDatabase(MultiChainTestCase):
         # To test that it will look for both responder and requester.
         db = self.persistence
         block1 = TestBlock()
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         block2 = TestBlock()
         block2.public_key_responder = block1.public_key_requester
         block2.sequence_number_responder = block1.sequence_number_requester-5
-        db.add_block(block2.id, block2)
+        db.add_block(block2)
         # Act & Assert
         self.assertEquals(db.get_previous_id(block1.public_key_requester), block1.id)
 
@@ -149,11 +164,11 @@ class TestDatabase(MultiChainTestCase):
         # To test that it will look for both responder and requester.
         db = self.persistence
         block1 = TestBlock()
-        db.add_block(block1.id, block1)
+        db.add_block(block1)
         block2 = TestBlock()
         block2.public_key_requester = block1.public_key_responder
         block2.sequence_number_requester = block1.sequence_number_responder-5
-        db.add_block(block2.id, block2)
+        db.add_block(block2)
         # Act & Assert
         self.assertEquals(db.get_previous_id(block1.public_key_responder), block1.id)
 
@@ -166,8 +181,8 @@ class TestDatabase(MultiChainTestCase):
         block2.sequence_number_requester = block1.sequence_number_responder + 5
         block2.total_up_requester = block1.total_up_responder + block2.up
         block2.total_down_requester = block1.total_down_responder + block2.down
-        db.add_block(block1.id, block1)
-        db.add_block(block2.id, block2)
+        db.add_block(block1)
+        db.add_block(block2)
         # Act
         (result_up, result_down) = db.get_total(block2.public_key_requester)
         # Assert

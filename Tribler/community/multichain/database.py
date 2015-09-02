@@ -1,8 +1,10 @@
 """ This file contains everything related to persistence for MultiChain.
 """
 from os import path
+from hashlib import sha1
 
 from Tribler.dispersy.database import Database
+from Tribler.community.multichain.conversion import encode_block
 
 DATABASE_DIRECTORY = path.join(u"sqlite")
 """ Path to the database location + dispersy._workingdirectory"""
@@ -52,13 +54,13 @@ class MultiChainDB(Database):
 
         self.open()
 
-    def add_block(self, block_id, block):
+    def add_block(self, block):
         """
         Persist a block under a block_id
         :param block_id: The ID the block is saved under. This is the hash of the block.
         :param block: The data that will be saved.
         """
-        data = (buffer(block_id), block.up, block.down,
+        data = (buffer(block.id), block.up, block.down,
                 block.total_up_requester, block.total_down_requester,
                 block.sequence_number_requester, buffer(block.previous_hash_requester),
                 block.total_up_responder, block.total_down_responder,
@@ -90,10 +92,11 @@ class MultiChainDB(Database):
 
         return str(db_result) if db_result else None
 
-    def get(self, block_id):
+    def get_by_block_id(self, block_id):
         """
         Returns a block saved in the persistence
         :param block_id: The id of the block that needs to be retrieved.
+        :return: The block that was requested or None
         """
 
         db_query = u"SELECT up, down, " \
@@ -102,6 +105,28 @@ class MultiChainDB(Database):
                    u"public_key_requester, signature_requester, public_key_responder, signature_responder " \
                    u"FROM `multi_chain` WHERE block_hash = ? LIMIT 1"
         db_result = self.execute(db_query, (buffer(block_id),)).fetchone()
+        # Decode the DB format and create a DB block
+        return DatabaseBlock(db_result) if db_result else None
+
+    def get_by_sequence_number_public_key(self, sequence_number, public_key):
+        """
+        Returns a block saved in the persistence.
+        :param sequence_number: The sequence number corresponding to the block.
+        :param public_key: The public key corresponding to the block
+        :return: The block that was requested or None
+        """
+
+        db_query = u"SELECT up, down, " \
+                   u"total_up_requester, total_down_requester, sequence_number_requester,  previous_hash_requester, " \
+                   u"total_up_responder, total_down_responder, sequence_number_responder,  previous_hash_responder," \
+                   u"public_key_requester, signature_requester, public_key_responder, signature_responder " \
+                   u"FROM " \
+                   u"(SELECT *, sequence_number_requester AS sequence_number, public_key_requester AS public_key " \
+                   u"FROM `multi_chain` UNION " \
+                   u"SELECT *, sequence_number_responder AS sequence_number, public_key_responder " \
+                   u"FROM `multi_chain`) " \
+                   u"WHERE sequence_number = ? AND public_key = ? LIMIT 1"
+        db_result = self.execute(db_query, (sequence_number, buffer(public_key))).fetchone()
         # Decode the DB format and create a DB block
         return DatabaseBlock(db_result) if db_result else None
 
@@ -150,7 +175,7 @@ class MultiChainDB(Database):
                    u"SELECT sequence_number_responder AS sequence_number " \
                    u"FROM multi_chain WHERE public_key_responder = ? )"
         db_result = self.execute(db_query, (public_key, public_key)).fetchone()[0]
-        return db_result if db_result else -1
+        return db_result if db_result is not None else -1
 
     def get_total(self, public_key):
         """
@@ -161,14 +186,15 @@ class MultiChainDB(Database):
         """
         public_key = buffer(public_key)
         db_query = u"SELECT total_up, total_down, MAX(sequence_number) FROM (" \
-                   u"SELECT total_up_requester as total_up, total_down_requester as total_down, " \
+                   u"SELECT total_up_requester AS total_up, total_down_requester AS total_down, " \
                    u"sequence_number_requester AS sequence_number FROM multi_chain " \
                    u"WHERE public_key_requester == ? UNION " \
-                   u"SELECT total_up_responder as total_up, total_down_responder as total_down, " \
+                   u"SELECT total_up_responder AS total_up, total_down_responder AS total_down, " \
                    u"sequence_number_responder AS sequence_number FROM multi_chain WHERE public_key_responder = ? )" \
                    u"LIMIT 1"
         db_result = self.execute(db_query, (public_key, public_key)).fetchone()
-        return (db_result[0], db_result[1]) if db_result[0] and db_result[1] else (-1, -1)
+        return (db_result[0], db_result[1]) if db_result[0] is not None and db_result[1] is not None \
+            else (-1, -1)
 
     def open(self, initial_statements=True, prepare_visioning=True):
         return super(MultiChainDB, self).open(initial_statements, prepare_visioning)
@@ -232,13 +258,15 @@ class DatabaseBlock:
         """ Set the signature part of the responder """
         self.public_key_responder = str(data[12])
         self.signature_responder = str(data[13])
+        """ Set up the block hash """
+        self.id = sha1(encode_block(self)).digest()
 
     @classmethod
     def from_tuple(cls, data):
         return cls(data)
 
     @classmethod
-    def from_message(cls, message):
+    def from_signature_response_message(cls, message):
         payload = message.payload
         requester = message.authentication.signed_members[0]
         responder = message.authentication.signed_members[1]
@@ -249,3 +277,36 @@ class DatabaseBlock:
                     payload.sequence_number_responder, payload.previous_hash_responder,
                     requester[1].public_key, requester[0],
                     responder[1].public_key, responder[0]))
+
+    @classmethod
+    def from_block_response_message(cls, message):
+        payload = message.payload
+        return cls((payload.up, payload.down,
+                    payload.total_up_requester, payload.total_down_requester,
+                    payload.sequence_number_requester, payload.previous_hash_requester,
+                    payload.total_up_responder, payload.total_down_responder,
+                    payload.sequence_number_responder, payload.previous_hash_responder,
+                    payload.public_key_requester, payload.signature_requester,
+                    payload.public_key_responder, payload.signature_responder))
+
+    def to_payload(self):
+        """
+        :return: (tuple) corresponding to the payload data in a Signature message.
+        """
+        return (self.up, self.down,
+                self.total_up_requester, self.total_down_requester,
+                self.sequence_number_requester, self.previous_hash_requester,
+                self.total_up_responder, self.total_down_responder,
+                self.sequence_number_responder, self.previous_hash_responder,
+                self.public_key_requester, self.signature_requester,
+                self.public_key_responder, self.signature_responder)
+
+    def __str__(self):
+        return "UP: {0!s}\n Down: {1!s}\n TU: {2!s}\n TD:{3!s}\n SNREQ: {4!s}\nPHREQ: {5!s}\n SNRES: {6!s}\nPHRES: {7!s}\n " \
+               "PKREQ: {8!s}\nSREQ: {9!s}\nPKRES: {10!s}\nSRES: {11!s}".format(
+                   self.up, self.down, self.total_up_requester, self.total_down_requester,
+                   self.sequence_number_requester, self.previous_hash_requester,
+                   self.total_up_responder, self.total_down_responder,
+                   self.sequence_number_responder, self.previous_hash_responder,
+                   self.public_key_requester, self.signature_requester,
+                   self.public_key_responder, self.signature_responder)
