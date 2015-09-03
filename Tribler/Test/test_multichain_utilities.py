@@ -10,6 +10,8 @@ from Tribler.dispersy.crypto import ECCrypto
 
 from Tribler.Test.test_as_server import AbstractServer
 
+from Tribler.community.multichain.payload import EMPTY_HASH
+
 
 class TestBlock:
     """
@@ -74,6 +76,19 @@ class TestBlock:
         # This block uses a different way of generating the hash.
         data = encode_signing_format(self.generate_block_payload())
         return sha1(data).digest()
+
+    @classmethod
+    def half_signed(cls):
+        """
+        Create a half_signed TestBlock
+        """
+        block = cls()
+        block.previous_hash_responder = EMPTY_HASH
+        block.sequence_number_responder = -1
+        block.signature_responder = ''
+        block.total_down_responder = -1
+        block.total_up_responder = -1
+        return block
 
 
 class MultiChainTestCase(AbstractServer):
