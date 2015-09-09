@@ -105,8 +105,7 @@ class MultiChainConversion(BinaryConversion):
         values = unpack_from(block_request_format, data, offset)
         offset += block_request_size
 
-        return \
-            offset, placeholder.meta.payload.implement(*values)
+        return offset, placeholder.meta.payload.implement(*values)
 
     def _encode_block_response(self, message):
         """

@@ -9,7 +9,6 @@ Full documentation will be available at http://repository.tudelft.nl/.
 import logging
 import base64
 from threading import Lock
-from sqlite3 import IntegrityError
 from twisted.internet.task import LoopingCall
 
 from Tribler.dispersy.authentication import DoubleMemberAuthentication, MemberAuthentication
@@ -276,12 +275,7 @@ class MultiChainCommunity(Community):
             # Create the hash of the message
             if not self.persistence.contains(block.id):
                 self._logger.info("Crawler: Persisting sr: %s" % base64.encodestring(block.id))
-                try:
-                    self.persistence.add_block(block)
-                except IntegrityError:
-                    # A race condition can occur between here and
-                    # the if statement checking if the DB already contains the block.
-                    self._logger.error("Crawler: tried to save already known block.")
+                self.persistence.add_block(block)
                 # Crawl further down the chain.
                 self.crawl_down(block.previous_hash_requester, block.sequence_number_requester-1,
                                 block.public_key_requester)
@@ -354,4 +348,3 @@ class MultiChainCommunityCrawler(MultiChainCommunity):
 
     def start_walking(self):
         self.register_task("take step", LoopingCall(self.take_step)).start(1.0, now=True)
-
