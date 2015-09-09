@@ -80,9 +80,6 @@ class MultiChainConversion(BinaryConversion):
         values = unpack_from(signature_format, data, offset)
         offset += signature_size
 
-        if len(values) != 10:
-            raise DropPacket("Unable to decode the signature")
-
         return \
             offset, placeholder.meta.payload.implement(*values)
 
@@ -107,9 +104,6 @@ class MultiChainConversion(BinaryConversion):
 
         values = unpack_from(block_request_format, data, offset)
         offset += block_request_size
-
-        if len(values) != 1:
-            raise DropPacket("Unable to decode the requested sequence number")
 
         return \
             offset, placeholder.meta.payload.implement(*values)
@@ -136,9 +130,6 @@ class MultiChainConversion(BinaryConversion):
 
         values = unpack_from(block_response_format, data, offset)
         offset += block_response_size
-
-        if len(values) != 14:
-            raise DropPacket("Unable to decode the requested sequence number")
 
         return \
             offset, placeholder.meta.payload.implement(*values)
