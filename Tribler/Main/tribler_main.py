@@ -65,7 +65,6 @@ from Tribler.Core.simpledefs import (DLSTATUS_DOWNLOADING, DLSTATUS_SEEDING, DLS
                                      NTFY_UPDATE, NTFY_VOTECAST, UPLOAD, dlstatus_strings)
 from Tribler.Core.version import commit_id, version_id
 from Tribler.Main.Dialogs.FeedbackWindow import FeedbackWindow
-from Tribler.Main.Utility.Feeds.rssparser import RssParser
 from Tribler.Main.Utility.GuiDBHandler import GUIDBProducer, startWorker
 from Tribler.Main.Utility.compat import (convertDefaultDownloadConfig, convertDownloadCheckpoints, convertMainConfig,
                                          convertSessionConfig)
@@ -133,7 +132,6 @@ class ABCApp(object):
         self.barter_community = None
         self.tunnel_community = None
 
-        self.torrentfeed = None
         self.webUI = None
         self.utility = None
 
@@ -179,7 +177,7 @@ class ABCApp(object):
             UserDownloadChoice.get_singleton().set_utility(self.utility)
 
             self.splash.tick('Initializing Family Filter')
-            cat = Category.getInstance()
+            cat = Category.getInstance(session)
 
             state = self.utility.read_config('family_filter')
             if state in (1, 0):
@@ -263,8 +261,6 @@ class ABCApp(object):
             self.splash.Destroy()
             self.frame.Show(True)
             session.lm.threadpool.call_in_thread(0, self.guiservthread_free_space_check)
-
-            self.torrentfeed = RssParser.getInstance()
 
             self.webUI = None
             if self.utility.read_config('use_webui'):
@@ -411,20 +407,6 @@ class ABCApp(object):
         # self.dispersy.callback.attach_exception_handler(self.frame.exceptionHandler)
 
         startWorker(None, self.loadSessionCheckpoint, delay=5.0, workerType="ThreadPool")
-
-        # initialize the torrent feed thread
-        channelcast = s.open_dbhandler(NTFY_CHANNELCAST)
-
-        def db_thread():
-            return channelcast.getMyChannelId()
-
-        def wx_thread(delayedResult):
-            my_channel = delayedResult.get()
-            if my_channel:
-                self.torrentfeed.register(self.utility.session, my_channel)
-                self.torrentfeed.addCallback(my_channel, self.guiUtility.channelsearch_manager.createTorrentFromDef)
-
-        startWorker(wx_thread, db_thread, delay=5.0)
 
     def startAPI(self, session, progress):
         @call_on_reactor_thread
@@ -626,12 +608,13 @@ class ABCApp(object):
                         doCheckpoint = True
 
                     if download.get_hops() == 0 and download.get_safe_seeding():
-                        self._logger.error("Re-add torrent with default nr of hops to prevent naked seeding")
+                        self._logger.info("Re-add torrent with default nr of hops to prevent naked seeding")
                         self.utility.session.remove_download(download)
-                        defaultDLConfig = DefaultDownloadStartupConfig.getInstance()
-                        dscfg = defaultDLConfig.copy()
+
+                        # copy the old download_config and change the hop count
+                        dscfg = download.copy()
                         dscfg.set_hops(self.utility.read_config('default_number_hops'))
-                        self.utility.session.start_download(tdef, dscfg)
+                        reactor.callInThread(self.utility.session.start_download, tdef, dscfg)
 
             self.prevActiveDownloads = newActiveDownloads
             if doCheckpoint:
@@ -661,9 +644,9 @@ class ABCApp(object):
         from Tribler.Main.vwxGUI.UserDownloadChoice import UserDownloadChoice
         user_download_choice = UserDownloadChoice.get_singleton()
         initialdlstatus_dict = {}
-        for _, state in user_download_choice.get_download_states().iteritems():
+        for infohash, state in user_download_choice.get_download_states().iteritems():
             if state == 'stop':
-                initialdlstatus_dict[id] = DLSTATUS_STOPPED
+                initialdlstatus_dict[infohash] = DLSTATUS_STOPPED
 
         self.utility.session.load_checkpoint(initialdlstatus_dict=initialdlstatus_dict)
 
@@ -748,9 +731,6 @@ class ABCApp(object):
                 if changeType == NTFY_CREATE:
                     if self.frame.channellist:
                         self.frame.channellist.SetMyChannelId(objectID)
-
-                    self.torrentfeed.register(self.utility.session, objectID)
-                    self.torrentfeed.addCallback(objectID, self.guiUtility.channelsearch_manager.createTorrentFromDef)
 
                 self.frame.managechannel.channelUpdated(
                     objectID,
@@ -877,9 +857,6 @@ class ABCApp(object):
 
         # write all persistent data to disk
         self.closewindow.tick('Write all persistent data to disk')
-        if self.torrentfeed:
-            self.torrentfeed.shutdown()
-            self.torrentfeed.delInstance()
         if self.webUI:
             self.webUI.stop()
             self.webUI.delInstance()

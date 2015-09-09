@@ -4,11 +4,12 @@
 import binascii
 import errno
 import logging
-import os
 import sys
 import time as timemod
 from threading import Event, enumerate as enumerate_threads
 from traceback import print_exc
+
+import os
 from twisted.internet import reactor
 
 from Tribler.Core.Modules.search_manager import SearchManager
@@ -98,11 +99,13 @@ class TriblerLaunchMany(object):
 
             if self.session.get_torrent_store():
                 from Tribler.Core.leveldbstore import LevelDbStore
-                self.torrent_store = LevelDbStore(self.session.get_torrent_store_dir())
+                self.torrent_store = LevelDbStore(self.session.get_state_dir(),
+                                                  self.session.get_torrent_store_dir())
 
             if self.session.get_enable_metadata():
                 from Tribler.Core.leveldbstore import LevelDbStore
-                self.metadata_store = LevelDbStore(self.session.get_metadata_store_dir())
+                self.metadata_store = LevelDbStore(self.session.get_state_dir(),
+                                                   self.session.get_metadata_store_dir())
 
             # torrent collecting: RemoteTorrentHandler
             if self.session.get_torrent_collecting():
@@ -118,7 +121,7 @@ class TriblerLaunchMany(object):
 
                 self._logger.debug('tlm: Reading Session state from %s', self.session.get_state_dir())
 
-                self.cat = Category.getInstance(self.session.get_install_dir())
+                self.cat = Category.getInstance(self.session)
 
                 # create DBHandlers
                 self.peer_db = PeerDBHandler(self.session)
@@ -162,11 +165,6 @@ class TriblerLaunchMany(object):
             if self.session.get_enable_torrent_search() or self.session.get_enable_channel_search():
                 self.search_manager = SearchManager(self.session)
                 self.search_manager.initialize()
-
-            if self.session.get_enable_channel_search():
-                from Tribler.Core.Modules.channel_manager import ChannelManager
-                self.channel_manager = ChannelManager(self.session)
-                self.channel_manager.initialize()
 
         if not self.initComplete:
             self.init(autoload_discovery)
@@ -217,6 +215,11 @@ class TriblerLaunchMany(object):
                     self.dispersy.define_auto_load(AllChannelCommunity, self.session.dispersy_member, load=True,
                                                    kargs={'tribler_session': self.session})
             load_communities()
+
+            if self.session.get_enable_channel_search():
+                from Tribler.Core.Modules.channel.channel_manager import ChannelManager
+                self.channel_manager = ChannelManager(self.session)
+                self.channel_manager.initialize()
 
         from Tribler.Core.DecentralizedTracking import mainlineDHT
         try:
@@ -486,8 +489,6 @@ class TriblerLaunchMany(object):
             dscfg = DownloadStartupConfig(pstate)
 
         except:
-            # FIXME(lipu): I think this part of the code has never been tested
-            print_exc()
             # pstate is invalid or non-existing
             _, file = os.path.split(filename)
 

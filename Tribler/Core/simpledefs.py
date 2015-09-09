@@ -39,10 +39,10 @@ V5 = no longer pickling data
 For details see API.py
 """
 
-STATEDIR_DLPSTATE_DIR = 'dlcheckpoints'
-STATEDIR_PEERICON_DIR = 'icons'
-STATEDIR_TORRENT_STORE_DIR = 'collected_torrents'
-STATEDIR_METADATA_STORE_DIR = 'collected_metadata'
+STATEDIR_DLPSTATE_DIR = u'dlcheckpoints'
+STATEDIR_PEERICON_DIR = u'icons'
+STATEDIR_TORRENT_STORE_DIR = u'collected_torrents'
+STATEDIR_METADATA_STORE_DIR = u'collected_metadata'
 
 STATEDIR_SESSCONFIG = 'libtribler.conf'
 
@@ -130,12 +130,17 @@ INFOHASH_LENGTH = 20
 
 # SIGNALS (for internal use)
 SIGNAL_ALLCHANNEL_COMMUNITY = 'signal_allchannel_community'
+SIGNAL_CHANNEL_COMMUNITY = 'signal_channel_community'
 SIGNAL_SEARCH_COMMUNITY = 'signal_search_community'
+
 SIGNAL_ON_SEARCH_RESULTS = 'signal_on_search_results'
+SIGNAL_ON_TORRENT_UPDATED = 'singal_on_torrent_updated'
 
 
 # SIGNALS (for common use, like APIs)
 SIGNAL_TORRENT = 'signal_torrent'
 SIGNAL_CHANNEL = 'signal_channel'
+SIGNAL_RSS_FEED = 'signal_rss_feed'
 
 SIGNAL_ON_CREATED = 'signal_on_created'
+SIGNAL_ON_UPDATED = 'signal_on_updated'

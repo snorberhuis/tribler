@@ -155,11 +155,10 @@ Section "!Main EXE" SecMain
  File Tribler\Core\DecentralizedTracking\pymdht\core\bootstrap_stable
  File Tribler\Core\DecentralizedTracking\pymdht\core\bootstrap_unstable
 
- ; For python-cryptography
- CreateDirectory "$INSTDIR\cryptography\hazmat\primitives\src"
- SetOutPath "$INSTDIR\cryptography\hazmat\primitives\src"
- File C:\Python27\x86\Lib\site-packages\cryptography-0.7.2-py2.7-win32.egg\cryptography\hazmat\primitives\src\constant_time.c
- File C:\Python27\x86\Lib\site-packages\cryptography-0.7.2-py2.7-win32.egg\cryptography\hazmat\primitives\src\constant_time.h
+ ; Install MSVCR 2010
+ SetOutPath "$INSTDIR"
+ File vcredist10_x86.exe
+ ExecWait "$INSTDIR\vcredist10_x86.exe /q /norestart"
 
 FileOpen $9 "$INSTDIR\tribler.exe.log" w
 FileWrite $9 ""

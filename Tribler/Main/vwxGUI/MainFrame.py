@@ -128,7 +128,6 @@ class MainFrame(wx.Frame):
         self.utility = self.guiUtility.utility
         self.params = self.guiUtility.params
         self.utility.frame = self
-        self.torrentfeed = None
         self.videoframe = None
         self.category = Category.getInstance()
         self.shutdown_and_upgrade_notes = None
@@ -509,7 +508,7 @@ class MainFrame(wx.Frame):
             useDefault = not self.utility.read_config('showsaveas')
             safe_seeding = self.utility.read_config('default_safeseeding_enabled')
             if not useDefault and not destdir:
-                defaultname = tdef.get_name_as_unicode()
+                defaultname = tdef.get_name_as_unicode() if tdef.is_multifile_torrent() else None
 
                 if wx.Thread_IsMain():
                     dlg = SaveAs(None, tdef, dscfg.get_dest_dir(), defaultname, selectedFiles)
@@ -546,8 +545,11 @@ class MainFrame(wx.Frame):
             # use default setup
             else:
                 if useDefault:
-                    # only load default anonymous level if we use default settings
-                    hops = self.utility.read_config('default_number_hops')
+                    if self.utility.read_config('default_anonimity_enabled'):
+                        # only load default anonymous level if we use default settings
+                        hops = self.utility.read_config('default_number_hops')
+                    else:
+                        hops = 0
 
             if hops > 0:
                 if not tdef:

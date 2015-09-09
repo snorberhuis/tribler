@@ -6,12 +6,13 @@
 import logging
 import os
 import threading
+import json
 from copy import deepcopy
 from pprint import pformat
 from struct import unpack_from
 from time import time
 from traceback import print_exc
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from libtorrent import bencode
 from twisted.internet.task import LoopingCall
 
@@ -22,7 +23,8 @@ from Tribler.Core.Utilities.unicode import dunno2unicode
 from Tribler.Core.simpledefs import (INFOHASH_LENGTH, NTFY_UPDATE, NTFY_INSERT, NTFY_DELETE, NTFY_CREATE,
                                      NTFY_MODIFIED, NTFY_TRACKERINFO, NTFY_MYPREFERENCES, NTFY_VOTECAST, NTFY_TORRENTS,
                                      NTFY_CHANNELCAST, NTFY_COMMENTS, NTFY_PLAYLISTS, NTFY_MODIFICATIONS,
-                                     NTFY_MODERATIONS, NTFY_MARKINGS, NTFY_STATE)
+                                     NTFY_MODERATIONS, NTFY_MARKINGS, NTFY_STATE,
+                                     SIGNAL_CHANNEL_COMMUNITY, SIGNAL_ON_TORRENT_UPDATED)
 from Tribler.dispersy.taskmanager import TaskManager
 from Tribler.Core.Utilities.tracker_utils import get_uniformed_tracker_url
 
@@ -1334,6 +1336,34 @@ class ChannelCastDBHandler(BasicDBHandler):
         self.votecast_db = None
         self.torrent_db = None
 
+    def get_metadata_torrents(self, is_collected=True, limit=20):
+        stmt = u"""
+SELECT T.torrent_id, T.infohash, T.name, T.length, T.category, T.status, T.num_seeders, T.num_leechers, CMD.value
+FROM MetaDataTorrent, ChannelTorrents AS CT, ChannelMetaData AS CMD, Torrent AS T
+WHERE CT.id == MetaDataTorrent.channeltorrent_id
+  AND CMD.id == MetaDataTorrent.metadata_id
+  AND T.torrent_id == CT.torrent_id
+  AND CMD.type == 'metadata-json'
+  AND CMD.value LIKE '%thumb_hash%'
+  AND T.is_collected == ?
+ORDER BY CMD.time_stamp DESC LIMIT ?;
+"""
+        result_list = self._db.fetchall(stmt, (int(is_collected), limit)) or []
+        torrent_list = []
+        for torrent_id, info_hash, name, length, category, status, num_seeders, num_leechers, metadata_json in result_list:
+            torrent_dict = {'id': torrent_id,
+                            'info_hash': str2bin(info_hash),
+                            'name': name,
+                            'length': length,
+                            'category': category,
+                            'status': status,
+                            'num_seeders': num_seeders,
+                            'num_leechers': num_leechers,
+                            'metadata-json': metadata_json}
+            torrent_list.append(torrent_dict)
+
+        return torrent_list
+
     # dispersy helper functions
     def _get_my_dispersy_cid(self):
         if not self.my_dispersy_cid:
@@ -1345,6 +1375,17 @@ class ChannelCastDBHandler(BasicDBHandler):
                     break
 
         return self.my_dispersy_cid
+
+    def get_torrent_metadata(self, channel_torrent_id):
+        stmt = u"""SELECT ChannelMetadata.value FROM ChannelMetadata, MetaDataTorrent
+                   WHERE type = 'metadata-json'
+                   AND ChannelMetadata.id = MetaDataTorrent.metadata_id
+                   AND MetaDataTorrent.channeltorrent_id = ?"""
+        result = self._db.fetchone(stmt, (channel_torrent_id,))
+        if result:
+            metadata_dict = json.loads(result)
+            metadata_dict['thumb_hash'] = metadata_dict['thumb_hash'].decode('hex')
+            return metadata_dict
 
     def getDispersyCIDFromChannelId(self, channel_id):
         return self._db.fetchone(u"SELECT dispersy_cid FROM Channels WHERE id = ?", (channel_id,))
@@ -1405,6 +1446,7 @@ class ChannelCastDBHandler(BasicDBHandler):
 
         insert_data = []
         updated_channels = {}
+
         for i, torrent in enumerate(torrentlist):
             channel_id, dispersy_id, peer_id, infohash, timestamp, name, files, trackers = torrent
             torrent_id = torrent_ids[i]
@@ -1421,12 +1463,23 @@ class ChannelCastDBHandler(BasicDBHandler):
             sql_insert_torrent = "INSERT INTO _ChannelTorrents (dispersy_id, torrent_id, channel_id, peer_id, name, time_stamp) VALUES (?,?,?,?,?,?)"
             self._db.executemany(sql_insert_torrent, insert_data)
 
+        updated_channel_torrent_dict = defaultdict(list)
+        for torrent in torrentlist:
+            channel_id, dispersy_id, peer_id, infohash, timestamp, name, files, trackers = torrent
+            channel_torrent_id = self.get_channel_torrent_id(channel_id, infohash)
+            updated_channel_torrent_dict[channel_id].append({u'info_hash': infohash,
+                                                             u'channel_torrent_id': channel_torrent_id})
+
         sql_update_channel = "UPDATE _Channels SET modified = strftime('%s','now'), nr_torrents = nr_torrents+? WHERE id = ?"
         update_channels = [(new_torrents, channel_id) for channel_id, new_torrents in updated_channels.iteritems()]
         self._db.executemany(sql_update_channel, update_channels)
 
         for channel_id in updated_channels.keys():
             self.notifier.notify(NTFY_CHANNELCAST, NTFY_UPDATE, channel_id)
+
+        for channel_id, item in updated_channel_torrent_dict.items():
+            # inform the channel_manager about new channel torrents
+            self.notifier.notify(SIGNAL_CHANNEL_COMMUNITY, SIGNAL_ON_TORRENT_UPDATED, channel_id, item)
 
     def on_remove_torrent_from_dispersy(self, channel_id, dispersy_id, redo):
         sql = "UPDATE _ChannelTorrents SET deleted_at = ? WHERE channel_id = ? and dispersy_id = ?"
@@ -1467,14 +1520,15 @@ class ChannelCastDBHandler(BasicDBHandler):
             channeltorrent_id = self._db.fetchone(sql, (torrent_id, channel_id))
         return channeltorrent_id
 
-    def hasTorrent(self, channel_id, infohash):
-        torrent_id = self.torrent_db.getTorrentID(infohash)
+    def get_channel_torrent_id(self, channel_id, info_hash):
+        torrent_id = self.torrent_db.getTorrentID(info_hash)
         if torrent_id:
             sql = "SELECT id FROM ChannelTorrents WHERE torrent_id = ? and channel_id = ?"
             channeltorrent_id = self._db.fetchone(sql, (torrent_id, channel_id))
-            if channeltorrent_id:
-                return True
-        return False
+            return channeltorrent_id
+
+    def hasTorrent(self, channel_id, infohash):
+        return True if self.get_channel_torrent_id(channel_id, infohash) else False
 
     def hasTorrents(self, channel_id, infohashes):
         returnAr = []
