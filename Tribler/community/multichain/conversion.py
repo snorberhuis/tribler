@@ -11,8 +11,8 @@ Hash length used in the MultiChain Community
 """
 # Calculated with sha1("").digest_size
 HASH_LENGTH = 20
-SIG_LENGTH = 40
-PK_LENGTH = 64
+SIG_LENGTH = 64
+PK_LENGTH = 74
 """
 Formatting of the signature packet
 """

@@ -21,11 +21,8 @@ class TestBlock:
 
     def __init__(self):
         crypto = ECCrypto()
-        key_requester = crypto.generate_key(u"very-low")
-        key_responder = crypto.generate_key(u"very-low")
-
-        print "Siglen:" + str(key_requester.get_signature_length())
-        print "PKlen:" + str(len(crypto.key_to_bin(key_responder.pub())))
+        key_requester = crypto.generate_key(u"curve25519")
+        key_responder = crypto.generate_key(u"curve25519")
 
         # Random payload but unique numbers.
         self.sequence_number_requester = random.randint(50, 100)

@@ -288,7 +288,7 @@ class MultiChainCommunity(Community):
 
     def crawl_down(self, next_hash, sequence_number, public_key):
         # Check if it is not the genesis block.
-        if sequence_number > 0:
+        if sequence_number >= 0:
             # Check if the block is not already known.
             if not self.persistence.contains(next_hash):
                 member = self.dispersy.get_member(public_key=public_key)
