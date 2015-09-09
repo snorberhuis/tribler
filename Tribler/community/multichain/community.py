@@ -10,6 +10,7 @@ import logging
 import base64
 from threading import Lock
 from sqlite3 import IntegrityError
+from twisted.internet.task import LoopingCall
 
 from Tribler.dispersy.authentication import DoubleMemberAuthentication, MemberAuthentication
 from Tribler.dispersy.resolution import PublicResolution
@@ -248,6 +249,9 @@ class MultiChainCommunity(Community):
             self.publish_block(message.candidate, requested_sequence_number)
 
     def publish_block(self, candidate, sequence_number):
+        if sequence_number == -1:
+            # latest sequence number to be published.
+            sequence_number = self.persistence.get_latest_sequence_number(self._public_key)
         requested_block = self.persistence.get_by_sequence_number_public_key(sequence_number, self._public_key)
         if requested_block:
             self._logger.info("Crawler: Sending block: %s" % sequence_number)
@@ -332,3 +336,22 @@ class MultiChainCommunity(Community):
         super(MultiChainCommunity, self).unload_community()
         # Close the persistence layer
         self.persistence.close()
+
+
+class MultiChainCommunityCrawler(MultiChainCommunity):
+    """
+    Extended MultiChainCommunity that also crawls other MultiChainCommunities.
+    It requests the chains of other MultiChains.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(MultiChainCommunityCrawler, self).__init__(*args, **kwargs)
+
+    def on_introduction_response(self, messages):
+        super(MultiChainCommunityCrawler, self).on_introduction_response(messages)
+        for message in messages:
+            self.publish_request_block_message(message.candidate)
+
+    def start_walking(self):
+        self.register_task("take step", LoopingCall(self.take_step)).start(1.0, now=True)
+
