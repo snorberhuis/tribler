@@ -17,7 +17,6 @@ from Tribler.dispersy.distribution import DirectDistribution
 from Tribler.dispersy.destination import CandidateDestination
 from Tribler.dispersy.community import Community
 from Tribler.dispersy.message import Message
-from Tribler.dispersy.crypto import ECCrypto
 from Tribler.dispersy.conversion import DefaultConversion
 
 from Tribler.community.multichain.payload import SignaturePayload, BlockRequestPayload, BlockResponsePayload

@@ -103,6 +103,11 @@ class MultiChainTestCase(TestAsServer):
         self._assertEqual_requester_signature(expected_block, actual_block)
         self._assertEqual_responder_signature(expected_block, actual_block)
 
+    def assertEqual_database_block(self, expected_block, actual_block):
+        self.assertEqual_block(expected_block, actual_block)
+        self.assertEqual(expected_block.mid_responder, actual_block.mid_responder)
+        self.assertEqual(expected_block.mid_requester, actual_block.mid_requester)
+
     def assertEqual_signature_payload(self, expected_payload, actual_payload):
         """
         Checks a signature message payload
@@ -128,12 +133,10 @@ class MultiChainTestCase(TestAsServer):
         self.assertEqual(expected_payload.previous_hash_requester, actual_payload.previous_hash_requester)
 
     def _assertEqual_requester_signature(self, expected_block, actual_block):
-        self.assertEqual(expected_block.mid_requester, actual_block.mid_requester)
         self.assertEqual(expected_block.signature_requester, actual_block.signature_requester)
         self.assertEqual(expected_block.public_key_requester, actual_block.public_key_requester)
 
     def _assertEqual_responder_signature(self, expected_block, actual_block):
-        self.assertEqual(expected_block.mid_responder, actual_block.mid_responder)
         self.assertEqual(expected_block.signature_responder, actual_block.signature_responder)
         self.assertEqual(expected_block.public_key_responder, actual_block.public_key_responder)
 

@@ -54,7 +54,7 @@ class TestDatabase(MultiChainTestCase):
             db.add_block(block1)
             # Assert
             result = db.get_by_block_id(block1.id)
-            self.assertEqual_block(block1, result)
+            self.assertEqual_database_block(block1, result)
         self.startTest(start)
 
     def test_add_two_blocks(self):
@@ -72,7 +72,7 @@ class TestDatabase(MultiChainTestCase):
             db.add_block(block2)
             # Assert
             result = db.get_by_block_id(block2.id)
-            self.assertEqual_block(block2, result)
+            self.assertEqual_database_block(block2, result)
         self.startTest(start)
 
     def test_add_block_valid_pk(self):
@@ -240,7 +240,7 @@ class TestDatabase(MultiChainTestCase):
             db = MultiChainDB(dispersy, self.getStateDir())
             block1 = self.getNewAddedBlock(db, dispersy)
             # Act & Assert
-            self.assertEqual_block(block1, db.get_by_sequence_number_and_mid(
+            self.assertEqual_database_block(block1, db.get_by_sequence_number_and_mid(
                 block1.sequence_number_requester, block1.mid_requester))
         self.startTest(start)
 
@@ -254,7 +254,7 @@ class TestDatabase(MultiChainTestCase):
             db = MultiChainDB(dispersy, self.getStateDir())
             block1 = self.getNewAddedBlock(db, dispersy)
             # Act & Assert
-            self.assertEqual_block(block1, db.get_by_sequence_number_and_mid(
+            self.assertEqual_database_block(block1, db.get_by_sequence_number_and_mid(
                 block1.sequence_number_responder, block1.mid_responder))
         self.startTest(start)
 

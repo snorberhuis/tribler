@@ -125,6 +125,9 @@ class TestConversion(MultiChainTestCase):
         self.assertEqual_block(block, result)
 
     def test_split_function(self):
+        """
+        Test the MultiChain split function.
+        """
         # Arrange
         converter = MultiChainConversion(self.community)
 
