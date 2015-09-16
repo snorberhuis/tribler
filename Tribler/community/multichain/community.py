@@ -42,8 +42,8 @@ class MultiChainCommunity(Community):
         self._logger = logging.getLogger(self.__class__.__name__)
 
         self._ec = self.my_member.private_key
-        self._public_key = ECCrypto().key_to_bin(self._ec.pub())
-        self.persistence = MultiChainDB(self.dispersy.working_directory)
+        self._mid = self.my_member.mid
+        self.persistence = MultiChainDB(self.dispersy, self.dispersy.working_directory)
         """
         Lock for operations on the chain. Only one operation can be pending on the chain at any time.
         Without locking the chain will be corrupted and branches will be created.
@@ -250,8 +250,8 @@ class MultiChainCommunity(Community):
     def publish_block(self, candidate, sequence_number):
         if sequence_number == -1:
             # latest sequence number to be published.
-            sequence_number = self.persistence.get_latest_sequence_number(self._public_key)
-        requested_block = self.persistence.get_by_sequence_number_public_key(sequence_number, self._public_key)
+            sequence_number = self.persistence.get_latest_sequence_number(self._mid)
+        requested_block = self.persistence.get_by_sequence_number_and_mid(sequence_number, self._mid)
         if requested_block:
             self._logger.info("Crawler: Sending block: %s" % sequence_number)
             meta = self.get_meta_message(BLOCK_RESPONSE)
@@ -271,7 +271,9 @@ class MultiChainCommunity(Community):
         """
         self._logger.info("Crawler: Valid %s block response(s) received." % len(messages))
         for message in messages:
-            block = DatabaseBlock.from_block_response_message(message)
+            requester = self.dispersy.get_member(public_key=message.payload.public_key_requester)
+            responder = self.dispersy.get_member(public_key=message.payload.public_key_responder)
+            block = DatabaseBlock.from_block_response_message(message, requester, responder)
             # Create the hash of the message
             if not self.persistence.contains(block.id):
                 self._logger.info("Crawler: Persisting sr: %s" % base64.encodestring(block.id))
@@ -312,17 +314,17 @@ class MultiChainCommunity(Community):
         :param down: Down metric for the interaction.
         :return: (total_up (int), total_down (int)
         """
-        total_up, total_down = self.persistence.get_total(self._public_key)
+        total_up, total_down = self.persistence.get_total(self._mid)
         if total_up == total_down == -1:
             return up, down
         else:
             return total_up + up, total_down + down
 
     def _get_next_sequence_number(self):
-        return self.persistence.get_latest_sequence_number(self._public_key) + 1
+        return self.persistence.get_latest_sequence_number(self._mid) + 1
 
     def _get_latest_hash(self):
-        previous_hash = self.persistence.get_previous_id(self._public_key)
+        previous_hash = self.persistence.get_previous_id(self._mid)
         return previous_hash if previous_hash else GENESIS_ID
 
     def unload_community(self):

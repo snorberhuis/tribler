@@ -8,7 +8,7 @@ from hashlib import sha1
 
 from Tribler.dispersy.crypto import ECCrypto
 
-from Tribler.Test.test_as_server import AbstractServer
+from Tribler.Test.test_as_server import TestAsServer, AbstractServer
 
 from Tribler.community.multichain.payload import EMPTY_HASH
 
@@ -39,12 +39,15 @@ class TestBlock:
         self.public_key_requester = crypto.key_to_bin(key_requester.pub())
         self.signature_requester = crypto.create_signature(key_requester, encode_signing_format(
             self.generate_requester()))
+        self.mid_requester = sha1(self.public_key_requester).digest()
 
         # A random hash is generated for the previous hash. It is only used to test if a hash can be persisted.
         self.previous_hash_responder = sha1(str(random.randint(100001, 200000))).digest()
         self.public_key_responder = crypto.key_to_bin(key_responder.pub())
         self.signature_responder = crypto.create_signature(key_responder, encode_signing_format(
             self.generate_signature_payload()))
+        self.mid_responder = sha1(self.public_key_responder).digest()
+
 
 
     @property
@@ -88,7 +91,7 @@ class TestBlock:
         return block
 
 
-class MultiChainTestCase(AbstractServer):
+class MultiChainTestCase(TestAsServer):
     def __init__(self, *args, **kwargs):
         super(MultiChainTestCase, self).__init__(*args, **kwargs)
 
@@ -125,10 +128,12 @@ class MultiChainTestCase(AbstractServer):
         self.assertEqual(expected_payload.previous_hash_requester, actual_payload.previous_hash_requester)
 
     def _assertEqual_requester_signature(self, expected_block, actual_block):
+        self.assertEqual(expected_block.mid_requester, actual_block.mid_requester)
         self.assertEqual(expected_block.signature_requester, actual_block.signature_requester)
         self.assertEqual(expected_block.public_key_requester, actual_block.public_key_requester)
 
     def _assertEqual_responder_signature(self, expected_block, actual_block):
+        self.assertEqual(expected_block.mid_responder, actual_block.mid_responder)
         self.assertEqual(expected_block.signature_responder, actual_block.signature_responder)
         self.assertEqual(expected_block.public_key_responder, actual_block.public_key_responder)
 

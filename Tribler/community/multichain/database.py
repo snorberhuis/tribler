@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS multi_chain(
  total_down_responder       INTEGER NOT NULL,
  sequence_number_responder  INTEGER NOT NULL,
  previous_hash_responder	TEXT NOT NULL,
- public_key_requester		TEXT NOT NULL,
+ mid_requester		        TEXT NOT NULL,
  signature_requester		TEXT NOT NULL,
- public_key_responder		TEXT NOT NULL,
+ mid_responder		        TEXT NOT NULL,
  signature_responder		TEXT NOT NULL
 );
 
@@ -44,21 +44,21 @@ class MultiChainDB(Database):
     Ensures a proper DB schema on startup.
     """
 
-    def __init__(self, working_directory):
+    def __init__(self, dispersy, working_directory):
         """
         Sets up the persistence layer ready for use.
+        :param dispersy: Dispersy stores the PK.
         :param working_directory: Path to the working directory
         that will contain the the db at working directory/DATABASE_PATH
         :return:
         """
         super(MultiChainDB, self).__init__(path.join(working_directory, DATABASE_PATH))
-
+        self._dispersy = dispersy
         self.open()
 
     def add_block(self, block):
         """
         Persist a block under a block_id
-        :param block_id: The ID the block is saved under. This is the hash of the block.
         :param block: The data that will be saved.
         """
         data = (buffer(block.id), block.up, block.down,
@@ -66,30 +66,30 @@ class MultiChainDB(Database):
                 block.sequence_number_requester, buffer(block.previous_hash_requester),
                 block.total_up_responder, block.total_down_responder,
                 block.sequence_number_responder, buffer(block.previous_hash_responder),
-                buffer(block.public_key_requester), buffer(block.signature_requester),
-                buffer(block.public_key_responder), buffer(block.signature_responder))
+                buffer(block.mid_requester), buffer(block.signature_requester),
+                buffer(block.mid_responder), buffer(block.signature_responder))
 
         self.execute(
             u"INSERT INTO multi_chain (block_hash, up, down, "
             u"total_up_requester, total_down_requester, sequence_number_requester, previous_hash_requester,"
             u"total_up_responder, total_down_responder, sequence_number_responder, previous_hash_responder,"
-            u"public_key_requester, signature_requester, public_key_responder, signature_responder) "
+            u"mid_requester, signature_requester, mid_responder, signature_responder) "
             u"VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             data)
 
-    def get_previous_id(self, public_key):
+    def get_previous_id(self, mid):
         """
         Get the id of the latest block in the chain for a specific public key.
-        :param public_key: The PK for which the latest hash has to be found.
+        :param mid: The mid for which the latest hash has to be found.
         :return: block_id
         """
-        public_key = buffer(public_key)
+        mid = buffer(mid)
         db_query = u"SELECT block_hash, MAX(sequence_number) FROM " \
                    u"(SELECT block_hash, sequence_number_requester AS sequence_number FROM multi_chain " \
-                   u"WHERE public_key_requester == ? UNION SELECT block_hash, sequence_number_responder " \
-                   u"FROM multi_chain WHERE public_key_responder = ?)"
+                   u"WHERE mid_requester == ? UNION SELECT block_hash, sequence_number_responder " \
+                   u"FROM multi_chain WHERE mid_responder = ?)"
 
-        db_result = self.execute(db_query, (public_key, public_key)).fetchone()[0]
+        db_result = self.execute(db_query, (mid, mid)).fetchone()[0]
 
         return str(db_result) if db_result else None
 
@@ -99,37 +99,46 @@ class MultiChainDB(Database):
         :param block_id: The id of the block that needs to be retrieved.
         :return: The block that was requested or None
         """
-
         db_query = u"SELECT up, down, " \
                    u"total_up_requester, total_down_requester, sequence_number_requester,  previous_hash_requester, " \
                    u"total_up_responder, total_down_responder, sequence_number_responder,  previous_hash_responder," \
-                   u"public_key_requester, signature_requester, public_key_responder, signature_responder " \
+                   u"mid_requester, signature_requester, mid_responder, signature_responder " \
                    u"FROM `multi_chain` WHERE block_hash = ? LIMIT 1"
         db_result = self.execute(db_query, (buffer(block_id),)).fetchone()
-        # Decode the DB format and create a DB block
-        return DatabaseBlock(db_result) if db_result else None
+        # Create a DB Block or return None
+        return self._create_database_block(db_result)
 
-    def get_by_sequence_number_public_key(self, sequence_number, public_key):
+    def get_by_sequence_number_and_mid(self, sequence_number, mid):
         """
         Returns a block saved in the persistence.
         :param sequence_number: The sequence number corresponding to the block.
-        :param public_key: The public key corresponding to the block
-        :return: The block that was requested or None
-        """
-
+        :param mid: The public key corresponding to the block
+        :return: The block that was requested or None"""
         db_query = u"SELECT up, down, " \
                    u"total_up_requester, total_down_requester, sequence_number_requester,  previous_hash_requester, " \
                    u"total_up_responder, total_down_responder, sequence_number_responder,  previous_hash_responder," \
-                   u"public_key_requester, signature_requester, public_key_responder, signature_responder " \
-                   u"FROM " \
-                   u"(SELECT *, sequence_number_requester AS sequence_number, public_key_requester AS public_key " \
-                   u"FROM `multi_chain` UNION " \
-                   u"SELECT *, sequence_number_responder AS sequence_number, public_key_responder " \
-                   u"FROM `multi_chain`) " \
-                   u"WHERE sequence_number = ? AND public_key = ? LIMIT 1"
-        db_result = self.execute(db_query, (sequence_number, buffer(public_key))).fetchone()
-        # Decode the DB format and create a DB block
-        return DatabaseBlock(db_result) if db_result else None
+                   u"mid_requester, signature_requester, mid_responder, signature_responder " \
+                   u"FROM (" \
+                   u"SELECT *, sequence_number_requester AS sequence_number, mid_requester AS mid FROM `multi_chain` " \
+                   u"UNION " \
+                   u"SELECT *, sequence_number_responder AS sequence_number, mid_responder AS mid FROM `multi_chain`) " \
+                   u"WHERE sequence_number = ? AND mid = ? LIMIT 1"
+        db_result = self.execute(db_query, (sequence_number, buffer(mid))).fetchone()
+        # Create a DB Block or return None
+        return self._create_database_block(db_result)
+
+    def _create_database_block(self, db_result):
+        """
+        Create a Database block or return None.
+        :param db_result: The DB_result with the DatabaseBlock or None
+        :return: DatabaseBlock if db_result else None
+        """
+        if db_result:
+            requester = self._dispersy.get_member(mid=str(db_result[10]))
+            responder = self._dispersy.get_member(mid=str(db_result[12]))
+            return DatabaseBlock(db_result + (requester.public_key, responder.public_key))
+        else:
+            return None
 
     def get_ids(self):
         """
@@ -150,50 +159,38 @@ class MultiChainDB(Database):
         db_result = self.execute(db_query, (buffer(block_id),)).fetchone()
         return db_result is not None
 
-    def contains_signature(self, signature_requester, public_key_requester):
-        """
-        Check if a block is existent in the persistence layer based on a signature and public key pair.
-        :param signature_requester: The id t hat needs to be checked.
-        :return: True if the block exists, else false.
-        :rtype : bool
-        """
-        db_query = u"SELECT block_hash FROM multi_chain " \
-                   u"WHERE public_key_requester == ? AND signature_requester == ? LIMIT 1"
-        db_result = self.execute(db_query, (buffer(public_key_requester), buffer(signature_requester))).fetchone()
-        return db_result is not None
-
-    def get_latest_sequence_number(self, public_key):
+    def get_latest_sequence_number(self, mid):
         """
         Return the latest sequence number known in this node.
         If no block for the pk is know returns -1.
-        :param public_key: Corresponding public key
+        :param mid: Corresponding public key
         :return: sequence number (integer) or -1 if no block is known
         """
-        public_key = buffer(public_key)
+        mid = buffer(mid)
         db_query = u"SELECT MAX(sequence_number) FROM (" \
                    u"SELECT sequence_number_requester AS sequence_number " \
-                   u"FROM multi_chain WHERE public_key_requester == ? UNION " \
+                   u"FROM multi_chain WHERE mid_requester == ? UNION " \
                    u"SELECT sequence_number_responder AS sequence_number " \
-                   u"FROM multi_chain WHERE public_key_responder = ? )"
-        db_result = self.execute(db_query, (public_key, public_key)).fetchone()[0]
+                   u"FROM multi_chain WHERE mid_responder = ? )"
+        db_result = self.execute(db_query, (mid, mid)).fetchone()[0]
         return db_result if db_result is not None else -1
 
-    def get_total(self, public_key):
+    def get_total(self, mid):
         """
         Return the latest (total_up, total_down) known in this node.
         if no block for the pk is know returns (-1,-1)
-        :param public_key: Corresponding public key
+        :param mid: Corresponding mid
         :return: (total_up (int), total_down (int)) or (-1, -1) if no block is known.
         """
-        public_key = buffer(public_key)
+        mid = buffer(mid)
         db_query = u"SELECT total_up, total_down, MAX(sequence_number) FROM (" \
                    u"SELECT total_up_requester AS total_up, total_down_requester AS total_down, " \
                    u"sequence_number_requester AS sequence_number FROM multi_chain " \
-                   u"WHERE public_key_requester == ? UNION " \
+                   u"WHERE mid_requester == ? UNION " \
                    u"SELECT total_up_responder AS total_up, total_down_responder AS total_down, " \
-                   u"sequence_number_responder AS sequence_number FROM multi_chain WHERE public_key_responder = ? )" \
+                   u"sequence_number_responder AS sequence_number FROM multi_chain WHERE mid_responder = ? )" \
                    u"LIMIT 1"
-        db_result = self.execute(db_query, (public_key, public_key)).fetchone()
+        db_result = self.execute(db_query, (mid, mid)).fetchone()
         return (db_result[0], db_result[1]) if db_result[0] is not None and db_result[1] is not None \
             else (-1, -1)
 
@@ -254,13 +251,17 @@ class DatabaseBlock:
         self.sequence_number_responder = data[8]
         self.previous_hash_responder = str(data[9])
         """ Set the signature part of the requester """
-        self.public_key_requester = str(data[10])
+        self.mid_requester = str(data[10])
         self.signature_requester = str(data[11])
         """ Set the signature part of the responder """
-        self.public_key_responder = str(data[12])
+        self.mid_responder = str(data[12])
         self.signature_responder = str(data[13])
+        """ Set the public keys """
+        self.public_key_requester = str(data[14])
+        self.public_key_responder = str(data[15])
         """ Set up the block hash """
         self.id = sha1(encode_block(self)).digest()
+
 
     @classmethod
     def from_tuple(cls, data):
@@ -276,19 +277,19 @@ class DatabaseBlock:
                     payload.sequence_number_requester, payload.previous_hash_requester,
                     payload.total_up_responder, payload.total_down_responder,
                     payload.sequence_number_responder, payload.previous_hash_responder,
-                    requester[1].public_key, requester[0],
-                    responder[1].public_key, responder[0]))
+                    requester[1].mid, requester[0], responder[1].mid, responder[0],
+                    requester[1].public_key, responder[1].public_key))
 
     @classmethod
-    def from_block_response_message(cls, message):
+    def from_block_response_message(cls, message, requester, responder):
         payload = message.payload
         return cls((payload.up, payload.down,
                     payload.total_up_requester, payload.total_down_requester,
                     payload.sequence_number_requester, payload.previous_hash_requester,
                     payload.total_up_responder, payload.total_down_responder,
                     payload.sequence_number_responder, payload.previous_hash_responder,
-                    payload.public_key_requester, payload.signature_requester,
-                    payload.public_key_responder, payload.signature_responder))
+                    requester.mid, payload.signature_requester, responder.mid, payload.signature_responder,
+                    requester.public_key, responder.public_key))
 
     def to_payload(self):
         """
