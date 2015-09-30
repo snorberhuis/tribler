@@ -8,7 +8,7 @@ from hashlib import sha1
 
 from Tribler.dispersy.crypto import ECCrypto
 
-from Tribler.Test.test_as_server import TestAsServer, AbstractServer
+from Tribler.Test.test_as_server import TestAsServer
 
 from Tribler.community.multichain.payload import EMPTY_HASH
 
