@@ -44,6 +44,7 @@ class TestMultiChainScheduler(AbstractServer):
             self.logger = logging.getLogger(self.__class__.__name__)
             self.signature_requested = False
             self.candidate = candidate
+            self.publish_success = True
             return
 
         def get_candidate(self, peer):
@@ -51,6 +52,7 @@ class TestMultiChainScheduler(AbstractServer):
 
         def publish_signature_request_message(self, candidate,  up, down):
             self.signature_requested = True
+            return self.publish_success
 
     def setUp(self, annotate=True):
         super(TestMultiChainScheduler, self).setUp(annotate)
@@ -94,12 +96,27 @@ class TestMultiChainScheduler(AbstractServer):
         """
         The scheduler schedules a signature request if the amount is above the threshold.
         """
+        # Arrange
         amount = self.data_threshold + 10
         # Act
         self.scheduler.update_amount_send(self.peer1, amount)
         # Assert
         """ No amount should be left open """
         self.assertEqual(0, self.scheduler._outstanding_amount_send[self.peer1])
+        self.assertTrue(self.community.signature_requested)
+
+    def test_update_amount_send_failed(self):
+        """
+        The scheduler schedules a signature request but fails and should remember the amount.
+        """
+        # Arrange
+        amount = self.data_threshold + 10
+        self.community.publish_success = False
+        # Act
+        self.scheduler.update_amount_send(self.peer1, amount)
+        # Assert
+        """ The whole amount should be left open."""
+        self.assertEqual(amount, self.scheduler._outstanding_amount_send[self.peer1])
         self.assertTrue(self.community.signature_requested)
 
     def test_update_amount_received_empty(self):
@@ -114,7 +131,7 @@ class TestMultiChainScheduler(AbstractServer):
         self.assertEqual(amount, self.scheduler._outstanding_amount_received[self.peer1])
         self.assertFalse(self.community.signature_requested)
 
-    def test_update_amount_send_add(self):
+    def test_update_amount_received_add(self):
         """
         The scheduler can track the amount when adding to a previous amount.
         """

@@ -38,7 +38,7 @@ class MultiChainScheduler:
     This outstanding amount is not persisted and is lost when Tribler is restarted.
     This is a very simple version that should be expanded in the future.
     """
-    """ The amount of data that the Scheduler will be altruistic about and allows to be open. """
+    """ The amount of bytes that the Scheduler will be altruistic about and allows to be open. """
     threshold = 50
 
     def __init__(self, community):
@@ -61,18 +61,20 @@ class MultiChainScheduler:
         """
         self._community.logger.debug("Updating amount send for: %s" % peer[0])
         total_amount_send = self._outstanding_amount_send.get(peer, 0) + amount_send
+        self._outstanding_amount_send[peer] = total_amount_send
         if total_amount_send >= self.threshold:
             candidate = self._community.get_candidate(peer)
             if candidate and candidate.get_member():
                 total_amount_received = self._outstanding_amount_received.get(peer, 0)
-                """ Reset the outstanding amounts and send a signature request for the outstanding amount"""
-                self._outstanding_amount_send[peer] = 0
-                self._outstanding_amount_received[peer] = 0
-                self._community.publish_signature_request_message(candidate, total_amount_send, total_amount_received)
+                """ Try to sent the request """
+                request_sent = self._community.\
+                    publish_signature_request_message(candidate, total_amount_send, total_amount_received)
+                if request_sent:
+                    """ Reset the outstanding amounts and send a signature request for the outstanding amount"""
+                    self._outstanding_amount_send[peer] = 0
+                    self._outstanding_amount_received[peer] = 0
             else:
                 self._community.logger.debug("No valid candidate found for: %s:%s to request block from." % (peer[0], peer[1]))
-        else:
-            self._outstanding_amount_send[peer] = total_amount_send
 
     def update_amount_received(self, peer, amount_received):
         """
@@ -171,22 +173,29 @@ class MultiChainCommunity(Community):
 
     def publish_signature_request_message(self, candidate, up, down):
         """
-        Creates and sends out a signed signature_request message.
+        Creates and sends out a signed signature_request message if the chain is free for operations.
+        If it is the request is send and True is returned, else False.
         :param candidate: The candidate that the signature request will send to.
         :param (int) up: The amount of bytes that have been sent to the candidate that need to signed.
         :param (int) down: The amount of bytes that have been received from the candidate that need to signed.
+        return (bool) if request is sent.
         """
-        self.logger.info("Sending signature request.")
+
         """
         Acquire chain lock to perform operations on the chain.
         The chain_lock is lifted after the timeout or a valid signature response is received.
         """
-        self.logger.debug("Get Lock: send signature request: %s" % self.chain_lock.locked())
-        self.chain_lock.acquire()
-        self.logger.debug("Acquired Lock: send signature request.")
+        self.logger.debug("Chain Lock: signature request: %s" % self.chain_lock.locked())
+        if self.chain_lock.acquire(False):
+            self.logger.debug("Chain Lock: acquired, sending signature request.")
+            self.logger.info("Sending signature request.")
 
-        message = self.create_signature_request_message(candidate, up, down)
-        self.create_signature_request(candidate, message, self.allow_signature_response, timeout=5.0)
+            message = self.create_signature_request_message(candidate, up, down)
+            self.create_signature_request(candidate, message, self.allow_signature_response, timeout=5.0)
+            return True
+        else:
+            self.logger.debug("Chain Lock: not acquired, dropping signature request.")
+            return  False
 
     def create_signature_request_message(self, candidate, up, down):
         """
