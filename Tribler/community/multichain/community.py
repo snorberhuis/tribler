@@ -38,8 +38,8 @@ class MultiChainScheduler:
     This outstanding amount is not persisted and is lost when Tribler is restarted.
     This is a very simple version that should be expanded in the future.
     """
-    """ The amount of bytes that the Scheduler will be altruistic about and allows to be open. """
-    threshold = 50
+    """ The amount of bytes that the Scheduler will be altruistic about and allows to be outstanding. """
+    threshold = 1024
 
     def __init__(self, community):
         """
@@ -92,6 +92,9 @@ class MultiChainCommunity(Community):
     """
     Community for reputation based on MultiChain tamper proof interaction history.
     """
+
+    """ Amount of time the MultiChain waits on a signature requests before it times out"""
+    signature_request_timeout = 5.0
 
     def __init__(self, *args, **kwargs):
         super(MultiChainCommunity, self).__init__(*args, **kwargs)
@@ -191,11 +194,12 @@ class MultiChainCommunity(Community):
             self.logger.info("Sending signature request.")
 
             message = self.create_signature_request_message(candidate, up, down)
-            self.create_signature_request(candidate, message, self.allow_signature_response, timeout=5.0)
+            self.create_signature_request(candidate, message, self.allow_signature_response,
+                                          timeout=self.signature_request_timeout)
             return True
         else:
             self.logger.debug("Chain Lock: not acquired, dropping signature request.")
-            return  False
+            return False
 
     def create_signature_request_message(self, candidate, up, down):
         """
@@ -229,6 +233,7 @@ class MultiChainCommunity(Community):
         if self.chain_lock.acquire(False):
             self.logger.debug("Chain Lock: acquired to process request.")
             # TODO: This code always signs a request. Checks and rejects should be inserted here!
+            # TODO: Like basic total_up == previous_total_up + block.up or more sophisticated chain checks.
             payload = message.payload
 
             total_up_responder, total_down_responder = self._get_next_total(payload.up, payload.down)

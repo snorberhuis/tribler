@@ -4,12 +4,12 @@ This file contains the tests for the community.py for MultiChain community.
 import uuid
 import logging
 
-from Tribler.Test.test_as_server import AbstractServer
+from Tribler.Test.test_as_server import BaseTestCase
 
 from Tribler.community.multichain.community import MultiChainScheduler
 
 
-class TestMultiChainScheduler(AbstractServer):
+class TestMultiChainScheduler(BaseTestCase):
     """
     Class that tests the MultiChainScheduler
     """
@@ -55,13 +55,13 @@ class TestMultiChainScheduler(AbstractServer):
             return self.publish_success
 
     def setUp(self, annotate=True):
-        super(TestMultiChainScheduler, self).setUp(annotate)
+        super(TestMultiChainScheduler, self).setUp()
         self.candidate = self.TestCandidate()
         self.community = self.TestSchedulerCommunity(self.candidate)
         self.scheduler = MultiChainScheduler(self.community)
 
     def tearDown(self, annotate=True):
-        super(TestMultiChainScheduler, self).tearDown(annotate)
+        super(TestMultiChainScheduler, self).tearDown()
         self.candidate = None
         self.community = None
         self.scheduler = None
