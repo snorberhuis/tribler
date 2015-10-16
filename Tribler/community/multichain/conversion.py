@@ -17,7 +17,7 @@ PK_LENGTH = 74
 Formatting of the signature packet
 """
 # TotalUp TotalDown Sequence_number, previous_hash
-append_format = 'i i i ' + str(HASH_LENGTH) + 's'
+append_format = 'Q Q i ' + str(HASH_LENGTH) + 's'
 # [Up, Down, TotalUpRequester, TotalDownRequester, sequence_number_requester, previous_hash_requester,
 #   TotalUpResponder, TotalDownResponder, sequence_number_responder, previous_hash_responder]
 signature_format = ' '.join(['!I I', append_format, append_format])

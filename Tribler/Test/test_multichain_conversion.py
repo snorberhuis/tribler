@@ -44,6 +44,29 @@ class TestConversion(MultiChainTestCase):
         # Assert
         self.assertEqual_signature_payload(block, result)
 
+    def test_encoding_decoding_signature_big_number(self):
+        """
+        Test if a responder can send a signature message with big total_up and down.
+        """
+        # Arrange
+        converter = MultiChainConversion(self.community)
+
+        meta = self.community.get_meta_message(SIGNATURE)
+        block = TestBlock()
+        block.total_up_requester = pow(2, 63)
+        block.total_down_requester = pow(2, 62)
+        block.total_up_responder = pow(2, 61)
+        block.total_down_responder = pow(2, 60)
+
+        message = meta.impl(distribution=(self.community.claim_global_time(),),
+                            payload=tuple(block.generate_signature_payload()))
+        # Act
+        encoded_message = converter._encode_signature(message)[0]
+
+        result = converter._decode_signature(TestPlaceholder(meta), 0, encoded_message)[1]
+        # Assert
+        self.assertEqual_signature_payload(block, result)
+
     def test_encoding_decoding_signature_requester(self):
         """
         Test if a requester can send a signature message.
@@ -63,8 +86,8 @@ class TestConversion(MultiChainTestCase):
         result = converter._decode_signature(TestPlaceholder(meta), 0, encoded_message)[1]
         # Assert
         self.assertEqual_signature_request(block, result)
-        self.assertEqual(-1, result.total_up_responder)
-        self.assertEqual(-1, result.total_down_responder)
+        self.assertEqual(0, result.total_up_responder)
+        self.assertEqual(0, result.total_down_responder)
         self.assertEqual(-1, result.sequence_number_responder)
         self.assertEqual(EMPTY_HASH, result.previous_hash_responder)
 

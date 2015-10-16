@@ -8,7 +8,7 @@ from hashlib import sha1
 
 from Tribler.dispersy.crypto import ECCrypto
 
-from Tribler.Test.test_as_server import TestAsServer
+from Tribler.Test.test_as_server import AbstractServer
 
 from Tribler.community.multichain.payload import EMPTY_HASH
 
@@ -91,9 +91,12 @@ class TestBlock:
         return block
 
 
-class MultiChainTestCase(TestAsServer):
+class MultiChainTestCase(AbstractServer):
     def __init__(self, *args, **kwargs):
         super(MultiChainTestCase, self).__init__(*args, **kwargs)
+
+    def setUp(self):
+        super(MultiChainTestCase, self).setUp()
 
     def assertEqual_block(self, expected_block, actual_block):
         """

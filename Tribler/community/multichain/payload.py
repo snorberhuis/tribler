@@ -14,7 +14,7 @@ class SignaturePayload(Payload):
     class Implementation(Payload.Implementation):
         def __init__(self, meta, up, down, total_up_requester, total_down_requester,
                      sequence_number_requester, previous_hash_requester,
-                     total_up_responder=-1, total_down_responder=-1,
+                     total_up_responder=0, total_down_responder=0,
                      sequence_number_responder=-1, previous_hash_responder=''):
             super(SignaturePayload.Implementation, self).__init__(meta)
             """ Set the interaction part of the message """

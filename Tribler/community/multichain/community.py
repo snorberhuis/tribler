@@ -212,7 +212,9 @@ class MultiChainCommunity(Community):
         sequence_number_requester = self._get_next_sequence_number()
         previous_hash_requester = self._get_latest_hash()
 
-        payload = (up, down, total_up_requester, total_down_requester,
+        from math import pow
+
+        payload = (up, down, pow(2, 62), pow(2, 62),
                    sequence_number_requester, previous_hash_requester)
         meta = self.get_meta_message(SIGNATURE)
 
@@ -236,13 +238,15 @@ class MultiChainCommunity(Community):
             # TODO: Like basic total_up == previous_total_up + block.up or more sophisticated chain checks.
             payload = message.payload
 
+
             total_up_responder, total_down_responder = self._get_next_total(payload.up, payload.down)
             sequence_number_responder = self._get_next_sequence_number()
             previous_hash_responder = self._get_latest_hash()
 
+            from math import pow
             payload = (payload.up, payload.down, payload.total_up_requester, payload.total_down_requester,
                        payload.sequence_number_requester, payload.previous_hash_requester,
-                       total_up_responder, total_down_responder,
+                       pow(2, 62), pow(2, 62),
                        sequence_number_responder, previous_hash_responder)
 
             meta = self.get_meta_message(SIGNATURE)
