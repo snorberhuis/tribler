@@ -39,7 +39,7 @@ class MultiChainScheduler:
     This is a very simple version that should be expanded in the future.
     """
     """ The amount of bytes that the Scheduler will be altruistic about and allows to be outstanding. """
-    threshold = 1024
+    threshold = 1024*1000
 
     def __init__(self, community):
         """
@@ -66,9 +66,12 @@ class MultiChainScheduler:
             candidate = self._community.get_candidate(peer)
             if candidate and candidate.get_member():
                 total_amount_received = self._outstanding_amount_received.get(peer, 0)
+                """ Convert to MB """
+                total_amount_sent_mb = total_amount_send / 1000
+                total_amount_received_mb = total_amount_received / 1000
                 """ Try to sent the request """
                 request_sent = self._community.\
-                    publish_signature_request_message(candidate, total_amount_send, total_amount_received)
+                    publish_signature_request_message(candidate, total_amount_sent_mb, total_amount_received_mb)
                 if request_sent:
                     """ Reset the outstanding amounts and send a signature request for the outstanding amount"""
                     self._outstanding_amount_send[peer] = 0
@@ -212,9 +215,7 @@ class MultiChainCommunity(Community):
         sequence_number_requester = self._get_next_sequence_number()
         previous_hash_requester = self._get_latest_hash()
 
-        from math import pow
-
-        payload = (up, down, pow(2, 62), pow(2, 62),
+        payload = (up, down, total_up_requester, total_down_requester,
                    sequence_number_requester, previous_hash_requester)
         meta = self.get_meta_message(SIGNATURE)
 
@@ -238,15 +239,13 @@ class MultiChainCommunity(Community):
             # TODO: Like basic total_up == previous_total_up + block.up or more sophisticated chain checks.
             payload = message.payload
 
-
             total_up_responder, total_down_responder = self._get_next_total(payload.up, payload.down)
             sequence_number_responder = self._get_next_sequence_number()
             previous_hash_responder = self._get_latest_hash()
 
-            from math import pow
             payload = (payload.up, payload.down, payload.total_up_requester, payload.total_down_requester,
                        payload.sequence_number_requester, payload.previous_hash_requester,
-                       pow(2, 62), pow(2, 62),
+                       total_up_responder, total_down_responder,
                        sequence_number_responder, previous_hash_responder)
 
             meta = self.get_meta_message(SIGNATURE)
