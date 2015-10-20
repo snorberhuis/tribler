@@ -8,7 +8,6 @@ Full documentation will be available at http://repository.tudelft.nl/.
 
 import logging
 import base64
-from threading import Lock
 from twisted.internet.task import LoopingCall
 
 from Tribler.dispersy.authentication import DoubleMemberAuthentication, MemberAuthentication
@@ -39,7 +38,7 @@ class MultiChainScheduler:
     This is a very simple version that should be expanded in the future.
     """
     """ The amount of bytes that the Scheduler will be altruistic about and allows to be outstanding. """
-    threshold = 1024*1000
+    threshold = 1024
 
     def __init__(self, community):
         """
@@ -70,14 +69,15 @@ class MultiChainScheduler:
                 total_amount_sent_mb = total_amount_send / 1000
                 total_amount_received_mb = total_amount_received / 1000
                 """ Try to sent the request """
-                request_sent = self._community.\
+                request_sent = self._community. \
                     publish_signature_request_message(candidate, total_amount_sent_mb, total_amount_received_mb)
                 if request_sent:
                     """ Reset the outstanding amounts and send a signature request for the outstanding amount"""
                     self._outstanding_amount_send[peer] = 0
                     self._outstanding_amount_received[peer] = 0
             else:
-                self._community.logger.debug("No valid candidate found for: %s:%s to request block from." % (peer[0], peer[1]))
+                self._community.logger.debug(
+                    "No valid candidate found for: %s:%s to request block from." % (peer[0], peer[1]))
 
     def update_amount_received(self, peer, amount_received):
         """
@@ -107,11 +107,11 @@ class MultiChainCommunity(Community):
         self._mid = self.my_member.mid
         self.persistence = MultiChainDB(self.dispersy, self.dispersy.working_directory)
         """
-        Lock for operations on the chain. Only one operation can be pending on the chain at any time.
-        Without locking the chain will be corrupted and branches will be created.
-        This lock ensures that only one operation is pending.
+        Exclusion flag for operations on the chain. Only one operation can be pending on the chain at any time.
+        Without exclusion the chain will be corrupted and branches will be created.
+        This exclusion flag ensures that only one operation is pending.
         """
-        self.chain_lock = Lock()
+        self.chain_exclusion_flag = False
         # No response is expected yet.
         self.expected_response = None
 
@@ -188,12 +188,13 @@ class MultiChainCommunity(Community):
         """
 
         """
-        Acquire chain lock to perform operations on the chain.
-        The chain_lock is lifted after the timeout or a valid signature response is received.
+        Acquire exclusive flag to perform operations on the chain.
+        The chain_exclusion_flag is lifted after the timeout or a valid signature response is received.
         """
-        self.logger.debug("Chain Lock: signature request: %s" % self.chain_lock.locked())
-        if self.chain_lock.acquire(False):
-            self.logger.debug("Chain Lock: acquired, sending signature request.")
+        self.logger.debug("Chain Exclusion: signature request: %s" % self.chain_exclusion_flag)
+        if not self.chain_exclusion_flag:
+            self.chain_exclusion_flag = True
+            self.logger.debug("Chain Exclusion: acquired, sending signature request.")
             self.logger.info("Sending signature request.")
 
             message = self.create_signature_request_message(candidate, up, down)
@@ -201,7 +202,7 @@ class MultiChainCommunity(Community):
                                           timeout=self.signature_request_timeout)
             return True
         else:
-            self.logger.debug("Chain Lock: not acquired, dropping signature request.")
+            self.logger.debug("Chain Exclusion: not acquired, dropping signature request.")
             return False
 
     def create_signature_request_message(self, candidate, up, down):
@@ -231,10 +232,11 @@ class MultiChainCommunity(Community):
             b. None (if we want to drop this message)
         """
         self.logger.info("Received signature request.")
-        self.logger.debug("Chain Lock: process request: %s" % self.chain_lock.locked())
-        # Check if the lock can be acquired without blocking to perform operations on the chain.
-        if self.chain_lock.acquire(False):
-            self.logger.debug("Chain Lock: acquired to process request.")
+        self.logger.debug("Chain Exclusion: process request: %s" % self.chain_exclusion_flag)
+        # Check if the exclusion flag can be acquired without blocking to perform operations on the chain.
+        if not self.chain_exclusion_flag:
+            self.chain_exclusion_flag = True
+            self.logger.debug("Chain Exclusion: acquired to process request.")
             # TODO: This code always signs a request. Checks and rejects should be inserted here!
             # TODO: Like basic total_up == previous_total_up + block.up or more sophisticated chain checks.
             payload = message.payload
@@ -254,12 +256,12 @@ class MultiChainCommunity(Community):
                                 distribution=(message.distribution.global_time,),
                                 payload=payload)
             self.persist_signature_response(message)
-            # Operation on chain done, release the chain_lock for other operations.
-            self.chain_lock.release()
+            # Operation on chain done, release the chain_exclusion_flag for other operations.
+            self.chain_exclusion_flag = False
             self.logger.info("Sending signature response.")
             return message
         else:
-            self.logger.debug("Chain Lock: not acquired. Dropping request.")
+            self.logger.debug("Chain Exclusion: not acquired. Dropping request.")
             return None
 
     def allow_signature_response(self, request, response, modified):
@@ -272,7 +274,7 @@ class MultiChainCommunity(Community):
             self.logger.info("Timeout received for signature request.")
             # Unpack the message from the cache object and store a half-signed record.
             self.persist_signature_response(request.request.payload.message)
-            self.chain_lock.release()
+            self.chain_exclusion_flag = False
             return False
         else:
             # TODO: Check expecting response
@@ -288,9 +290,9 @@ class MultiChainCommunity(Community):
         self.logger.info("Valid %s signature response(s) received." % len(messages))
         for message in messages:
             self.persist_signature_response(message)
-            # Release lock because the operation is done.
-            self.logger.debug("Release lock: received signature response.")
-            self.chain_lock.release()
+            # Release exclusion flag because the operation is done.
+            self.logger.debug("Release chain exclusion: received signature response.")
+            self.chain_exclusion_flag = False
 
     def persist_signature_response(self, message):
         """
