@@ -10,13 +10,14 @@ import logging
 import base64
 from twisted.internet.task import LoopingCall
 
-from Tribler.dispersy.authentication import DoubleMemberAuthentication, MemberAuthentication
+from Tribler.dispersy.authentication import DoubleMemberAuthentication, MemberAuthentication, NoAuthentication
 from Tribler.dispersy.resolution import PublicResolution
 from Tribler.dispersy.distribution import DirectDistribution
 from Tribler.dispersy.destination import CandidateDestination
 from Tribler.dispersy.community import Community
 from Tribler.dispersy.message import Message
 from Tribler.dispersy.conversion import DefaultConversion
+from Tribler.dispersy.payload import SignatureRequestPayload
 
 from Tribler.community.multichain.payload import SignaturePayload, BlockRequestPayload, BlockResponsePayload
 from Tribler.community.multichain.database import MultiChainDB, DatabaseBlock
@@ -53,7 +54,8 @@ class MultiChainScheduler:
 
     def update_amount_send(self, peer, amount_send):
         """
-        Update the amount of data send. If the amount is above the threshold, then a block will be created.
+        Update the amount of data send. If the amount is above the threshold,
+        then a block will be sent if no other operation is pending.
         :param peer: (address, port) translated into a Candidate.
         :param amount_send: amount of bytes send to the peer.
         :return: None
@@ -69,12 +71,10 @@ class MultiChainScheduler:
                 total_amount_sent_mb = total_amount_send / 1000
                 total_amount_received_mb = total_amount_received / 1000
                 """ Try to sent the request """
-                request_sent = self._community. \
-                    publish_signature_request_message(candidate, total_amount_sent_mb, total_amount_received_mb)
+                request_sent = self._community.try_to_publish_signature_request_message(
+                    candidate, total_amount_sent_mb, total_amount_received_mb)
                 if request_sent:
-                    """ Reset the outstanding amounts and send a signature request for the outstanding amount"""
-                    self._outstanding_amount_send[peer] = 0
-                    self._outstanding_amount_received[peer] = 0
+                    self._reset_amounts(peer)
             else:
                 self._community.logger.debug(
                     "No valid candidate found for: %s:%s to request block from." % (peer[0], peer[1]))
@@ -90,6 +90,40 @@ class MultiChainScheduler:
         self._outstanding_amount_received[peer] = self._outstanding_amount_received.get(peer, 0) + amount_received
         # TODO this amount received has to be checked in the future when signature_requests come in.
 
+    def notify_done(self):
+        """
+        Notifies the scheduler it is done with the current operation on the chain
+        and is ready to schedule new operation with holding the chain_exclusion flag.
+        :return: True if another signature request is sent else False.
+        """
+        for peer in self._outstanding_amount_send:
+            total_amount_send = self._outstanding_amount_send[peer]
+            if total_amount_send >= self.threshold:
+                candidate = self._community.get_candidate(peer)
+                if candidate and candidate.get_member():
+                    total_amount_received = self._outstanding_amount_received.get(peer, 0)
+                    """ Convert to MB """
+                    total_amount_sent_mb = total_amount_send / 1000
+                    total_amount_received_mb = total_amount_received / 1000
+                    """ Sent the request """
+                    self._community.publish_signature_request_message(
+                        candidate, total_amount_sent_mb, total_amount_received_mb)
+                    self._reset_amounts(peer)
+                    return True
+                else:
+                    self._community.logger.debug(
+                        "No valid candidate found for: %s:%s to request block from." % (peer[0], peer[1]))
+        """ No additional signature requests sent """
+        return False
+
+    def _reset_amounts(self, peer):
+        """
+        Delete the amounts entry if the key is present, so the dictionary does not become to big.
+        """
+        # Default given so no error is given if the key is not present.
+        self._outstanding_amount_send.pop(peer, 0)
+        self._outstanding_amount_received.pop(peer, 0)
+
 
 class MultiChainCommunity(Community):
     """
@@ -103,6 +137,8 @@ class MultiChainCommunity(Community):
         super(MultiChainCommunity, self).__init__(*args, **kwargs)
         self.logger = logging.getLogger(self.__class__.__name__)
 
+        self.scheduler = MultiChainScheduler(self)
+
         self._ec = self.my_member.private_key
         self._mid = self.my_member.mid
         self.persistence = MultiChainDB(self.dispersy, self.dispersy.working_directory)
@@ -111,7 +147,7 @@ class MultiChainCommunity(Community):
         Without exclusion the chain will be corrupted and branches will be created.
         This exclusion flag ensures that only one operation is pending.
         """
-        self.chain_exclusion_flag = False
+        self._chain_exclusion_flag = False
         # No response is expected yet.
         self.expected_response = None
 
@@ -174,10 +210,19 @@ class MultiChainCommunity(Community):
                     self._generic_timeline_check,
                     self.received_block_response), ]
 
+    def check_signature_request(self, messages):
+        messages = super(MultiChainCommunity, self).check_signature_request(messages)
+        for message in messages:
+            if type(message) != DropMessage:
+                if self._chain_exclusion_flag:
+                    yield DelayMessage(message)
+                else
+                    yield message
+
     def initiate_conversions(self):
         return [DefaultConversion(self), MultiChainConversion(self)]
 
-    def publish_signature_request_message(self, candidate, up, down):
+    def try_to_publish_signature_request_message(self, candidate, up, down):
         """
         Creates and sends out a signed signature_request message if the chain is free for operations.
         If it is the request is send and True is returned, else False.
@@ -186,24 +231,34 @@ class MultiChainCommunity(Community):
         :param (int) down: The amount of bytes that have been received from the candidate that need to signed.
         return (bool) if request is sent.
         """
-
         """
         Acquire exclusive flag to perform operations on the chain.
-        The chain_exclusion_flag is lifted after the timeout or a valid signature response is received.
+        The _chain_exclusion_flag is lifted after the timeout or a valid signature response is received.
         """
-        self.logger.debug("Chain Exclusion: signature request: %s" % self.chain_exclusion_flag)
-        if not self.chain_exclusion_flag:
-            self.chain_exclusion_flag = True
+        self.logger.debug("Chain Exclusion: signature request: %s" % self._chain_exclusion_flag)
+        if not self._chain_exclusion_flag:
+            self._chain_exclusion_flag = True
             self.logger.debug("Chain Exclusion: acquired, sending signature request.")
-            self.logger.info("Sending signature request.")
-
-            message = self.create_signature_request_message(candidate, up, down)
-            self.create_signature_request(candidate, message, self.allow_signature_response,
-                                          timeout=self.signature_request_timeout)
+            self.publish_signature_request_message(candidate, up, down)
             return True
         else:
             self.logger.debug("Chain Exclusion: not acquired, dropping signature request.")
             return False
+
+    def publish_signature_request_message(self, candidate, up, down):
+        """
+        Sends out a signed signature_request message.
+        This method bypassing checking the chain exclusion flag and assumes it already is set.
+        :param candidate: The candidate that the signature request will send to.
+        :param (int) up: The amount of bytes that have been sent to the candidate that need to signed.
+        :param (int) down: The amount of bytes that have been received from the candidate that need to signed.
+        return (bool) if request is sent.
+        """
+        assert (self._chain_exclusion_flag is True)
+        self.logger.info("Sending signature request.")
+        message = self.create_signature_request_message(candidate, up, down)
+        self.create_signature_request(candidate, message, self.allow_signature_response,
+                                      timeout=self.signature_request_timeout)
 
     def create_signature_request_message(self, candidate, up, down):
         """
@@ -232,10 +287,10 @@ class MultiChainCommunity(Community):
             b. None (if we want to drop this message)
         """
         self.logger.info("Received signature request.")
-        self.logger.debug("Chain Exclusion: process request: %s" % self.chain_exclusion_flag)
+        self.logger.debug("Chain Exclusion: process request: %s" % self._chain_exclusion_flag)
         # Check if the exclusion flag can be acquired without blocking to perform operations on the chain.
-        if not self.chain_exclusion_flag:
-            self.chain_exclusion_flag = True
+        if not self._chain_exclusion_flag:
+            self._chain_exclusion_flag = True
             self.logger.debug("Chain Exclusion: acquired to process request.")
             # TODO: This code always signs a request. Checks and rejects should be inserted here!
             # TODO: Like basic total_up == previous_total_up + block.up or more sophisticated chain checks.
@@ -256,8 +311,8 @@ class MultiChainCommunity(Community):
                                 distribution=(message.distribution.global_time,),
                                 payload=payload)
             self.persist_signature_response(message)
-            # Operation on chain done, release the chain_exclusion_flag for other operations.
-            self.chain_exclusion_flag = False
+            # Operation on chain done, release the _chain_exclusion_flag for other operations.
+            self._chain_exclusion_flag = False
             self.logger.info("Sending signature response.")
             return message
         else:
@@ -274,7 +329,7 @@ class MultiChainCommunity(Community):
             self.logger.info("Timeout received for signature request.")
             # Unpack the message from the cache object and store a half-signed record.
             self.persist_signature_response(request.request.payload.message)
-            self.chain_exclusion_flag = False
+            self._release_chain_exclusion_flag()
             return False
         else:
             # TODO: Check expecting response
@@ -290,9 +345,7 @@ class MultiChainCommunity(Community):
         self.logger.info("Valid %s signature response(s) received." % len(messages))
         for message in messages:
             self.persist_signature_response(message)
-            # Release exclusion flag because the operation is done.
-            self.logger.debug("Release chain exclusion: received signature response.")
-            self.chain_exclusion_flag = False
+            self._release_chain_exclusion_flag()
 
     def persist_signature_response(self, message):
         """
@@ -384,6 +437,19 @@ class MultiChainCommunity(Community):
 
     def get_key(self):
         return self._ec
+
+    def _release_chain_exclusion_flag(self):
+        """
+        Notifies the scheduler it is done and releases the flag if no new signature request is send out.
+        """
+        if self.scheduler.notify_done():
+            """ New signature request is scheduled, so the flag is not released yet. """
+            self.logger.info("New signature request scheduled.")
+            return
+        else:
+            """ No new signature request is scheduled so the flag is not released """
+            self.logger.info("No new signature request scheduled.")
+            self._chain_exclusion_flag = False
 
     def _get_next_total(self, up, down):
         """
