@@ -445,10 +445,11 @@ class ABCApp(object):
 
             self.tunnel_community = dispersy.define_auto_load(HiddenTunnelCommunity, dispersy_member, load=True,
                                                               kargs=tunnel_kwargs)[0]
-            """ Start the multichain community and hook in the multichain scheduler. """
-            multichain = dispersy.define_auto_load(MultiChainCommunity, dispersy_member, load=True,)[0]
-            scheduler = MultiChainScheduler(multichain)
-            self.tunnel_community.multichain_scheduler = scheduler
+            if self.sconfig.get_enable_multichain():
+                """ Start the multichain community and hook in the multichain scheduler. """
+                multichain = dispersy.define_auto_load(MultiChainCommunity, dispersy_member, load=True,)[0]
+                scheduler = MultiChainScheduler(multichain)
+                self.tunnel_community.multichain_scheduler = scheduler
 
             session.set_anon_proxy_settings(2, ("127.0.0.1", session.get_tunnel_community_socks5_listen_ports()))
 
