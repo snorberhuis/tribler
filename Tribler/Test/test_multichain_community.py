@@ -1,12 +1,18 @@
 """
 This file contains the tests for the community.py for MultiChain community.
 """
+import time
 import uuid
 import logging
 
+from Tribler.community.multichain.community import MultiChainScheduler, MultiChainCommunity, \
+    BLOCK_REQUEST, BLOCK_RESPONSE
+
 from Tribler.Test.test_as_server import BaseTestCase
 
-from Tribler.community.multichain.community import MultiChainScheduler
+from Tribler.dispersy.tests.dispersytestclass import DispersyTestFunc
+from Tribler.dispersy.util import blocking_call_on_reactor_thread
+from Tribler.dispersy.tests.debugcommunity.node import DebugNode
 
 
 class TestMultiChainScheduler(BaseTestCase):
@@ -157,3 +163,117 @@ class TestMultiChainScheduler(BaseTestCase):
         """ No amount should be left open """
         self.assertEqual(amount, self.scheduler._outstanding_amount_received[self.peer1])
         self.assertFalse(self.community.signature_requested)
+
+
+class TestMultiChainCommunity(DispersyTestFunc):
+    """
+    Class that tests the MultiChainCommunity on an integration level.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super(TestMultiChainCommunity, self).__init__(*args, **kwargs)
+
+    def test_publish_signature_request_message(self):
+        """
+        Test the community to publish a signature request message.
+        """
+        node, other = self.create_nodes(2)
+        other.send_identity(node)
+        target = other.my_candidate
+        target.associate(other.my_pub_member)
+        # Act
+        node.call(node.community.publish_signature_request_message, target, 5, 5)
+        # Assert
+        message = other.receive_message(names=[u"dispersy-signature-request"]).next()
+        self.assertTrue(message)
+
+    def test_receive_signature_response(self):
+        """
+        Test the community to receive a signature request message.
+        """
+        # Arrange
+        node, other = self.create_nodes(2)
+        other.send_identity(node)
+
+        target = other.my_candidate
+        target.associate(other.my_pub_member)
+        node.call(node.community.publish_signature_request_message, target, 5, 5)
+        # Ignore source, as it is a Candidate. We need to use DebugNodes in test.
+        _, signature_request = other.receive_message(names=[u"dispersy-signature-request"]).next()
+        # Act
+        other.give_message(signature_request, node)
+        """ Return the response. """
+        # Ignore source, as it is a Candidate. We need to use DebugNodes in test.
+        _, signature_response = node.receive_message(names=[u"dispersy-signature-response"]).next()
+        node.give_message(signature_response, node)
+        # Assert
+        self.assertFalse(other.community.chain_exclusion_flag)
+        self.assertTrue(self.assertBlocksInDatabase(other, 1))
+        self.assertTrue(self.assertBlocksInDatabase(node, 1))
+        self.assertTrue(self.assertBlocksAreEqual(node, other))
+
+    def test_signature_request_timeout(self):
+        """"
+        Test the community to timeout on a signature request message.
+        """
+        # Arrange
+        node, other = self.create_nodes(2)
+        other.send_identity(node)
+
+        target = other.my_candidate
+        target.associate(other.my_pub_member)
+        # Act
+        node.call(node.community.publish_signature_request_message, target, 5, 5)
+        """" Wait for the timeout. """
+        time.sleep(MultiChainCommunity.signature_request_timeout + 2)
+        # Assert
+        self.assertFalse(other.community.chain_exclusion_flag)
+        self.assertTrue(self.assertBlocksInDatabase(node, 1))
+        self.assertTrue(self.assertBlocksInDatabase(other, 0))
+
+    def test_crawler(self):
+        """
+        Test the crawler methods.
+        """
+        # Arrange
+        node, other, crawler = self.create_nodes(3)
+        other.send_identity(node)
+        other.send_identity(crawler)
+        node.send_identity(crawler)
+
+        target = other.my_candidate
+        target.associate(other.my_pub_member)
+        node.call(node.community.publish_signature_request_message, target, 5, 5)
+        """ Create a block"""
+        _, signature_request = other.receive_message(names=[u"dispersy-signature-request"]).next()
+        other.give_message(signature_request, node)
+        _, signature_response = node.receive_message(names=[u"dispersy-signature-response"]).next()
+        node.give_message(signature_response, node)
+        # Act
+        crawler.call(crawler.community.publish_request_block_message, target)
+        _, block_request = other.receive_message(names=[BLOCK_REQUEST]).next()
+        other.give_message(block_request, crawler)
+        _, block_response = crawler.receive_message(names=[BLOCK_RESPONSE]).next()
+        crawler.give_message(block_response, other)
+        # Assert
+        self.assertTrue(self.assertBlocksInDatabase(other, 1))
+        self.assertTrue(self.assertBlocksInDatabase(node, 1))
+        self.assertTrue(self.assertBlocksInDatabase(crawler, 1))
+        self.assertTrue(self.assertBlocksAreEqual(node, other))
+
+    @blocking_call_on_reactor_thread
+    def assertBlocksInDatabase(self, node, amount):
+        return len(node.community.persistence.get_ids()) == amount
+
+    @blocking_call_on_reactor_thread
+    def assertBlocksAreEqual(self, node, other):
+        ids_node = node.community.persistence.get_ids()
+        ids_other = other.community.persistence.get_ids()
+        return ids_node == ids_other
+
+    def create_nodes(self, *args, **kwargs):
+        return super(TestMultiChainCommunity, self).create_nodes(*args, community_class=MultiChainCommunity,
+                                                                 memory_database=False, **kwargs)
+
+    def _create_node(self, dispersy, community_class, c_master_member):
+        return DebugNode(self, dispersy, community_class, c_master_member, curve=u"curve25519")

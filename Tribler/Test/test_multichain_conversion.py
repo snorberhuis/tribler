@@ -145,6 +145,9 @@ class TestConversion(MultiChainTestCase):
         result = converter._decode_block_response(TestPlaceholder(meta), 0, encoded_message)[1]
         # Assert
         self.assertEqual(len(block.public_key_requester), len(result.public_key_requester))
+        self.assertTrue(self.community.crypto.is_valid_public_bin(block.public_key_requester))
+        self.assertTrue(self.community.crypto.is_valid_public_bin(block.public_key_responder))
+
         self.assertEqual_block(block, result)
 
     def test_split_function(self):

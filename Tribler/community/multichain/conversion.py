@@ -150,6 +150,9 @@ def encode_block(payload):
     :param payload: Payload containing the data as properties
     :return: encoding
     """
+    """ Test code sometimes run a different curve with a different key length resulting in hard to catch bugs."""
+    assert len(payload.public_key_requester) == PK_LENGTH
+    assert len(payload.public_key_responder) == PK_LENGTH
     return pack(block_response_format, *(payload.up, payload.down,
                                          payload.total_up_requester, payload.total_down_requester,
                                          payload.sequence_number_requester, payload.previous_hash_requester,
